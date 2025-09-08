@@ -1,11 +1,23 @@
 const User = require('../models/userModel');
+const Shop = require('../models/shopModel');
 const authService = require('../services/authService');
 const emailService = require('../services/emailService');
 const { verifyGoogleIdToken } = require('../services/googleAuthService');
 
 exports.register = async (req, res) => {
   try {
-    const { email, password, fullName, role } = req.body;
+    const { 
+      email, 
+      password, 
+      fullName, 
+      role,
+      // New, simplified Shop registration fields (Step 1)
+      shopName,
+      licenseNumber,
+      phone,
+      address,
+      licenseDocumentUrl
+    } = req.body;
     
     if (password.length < 8) {
       return res.status(400).json({ message: 'Password must be at least 8 characters long' });
@@ -20,6 +32,14 @@ exports.register = async (req, res) => {
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(400).json({ message: 'User already exists' });
+    }
+
+    // For shop owners, check if license number already exists
+    if (role === 'shop') {
+      const existingShop = await Shop.findOne({ licenseNumber });
+      if (existingShop) {
+        return res.status(400).json({ message: 'Shop with this license number already exists' });
+      }
     }
 
     const hashedPassword = await authService.hashPassword(password);
@@ -41,16 +61,50 @@ exports.register = async (req, res) => {
 
     await user.save();
 
+    // If it's a shop owner, create shop record with only basic data (Step 1)
+    let shop = null;
+    if (role === 'shop') {
+      // Validate required shop fields
+      if (!shopName || !licenseNumber || !phone || !address) {
+        await User.findByIdAndDelete(user._id);
+        return res.status(400).json({ message: 'All shop fields are required' });
+      }
+      
+      shop = new Shop({
+        ownerId: user._id,
+        shopName,
+        licenseNumber,
+        phone,
+        address,
+        isLocationVerified: false,
+        licenseDocument: licenseDocumentUrl ? {
+          url: licenseDocumentUrl,
+          mimeType: 'application/pdf'
+        } : undefined,
+        verificationStatus: 'pending'
+      });
+
+      await shop.save();
+
+      // Link shop to user
+      user.shopId = shop._id;
+      await user.save();
+    }
+
     const emailSent = await emailService.sendOTP(email, otp);
     if (!emailSent) {
       await User.findByIdAndDelete(user._id);
+      if (shop) {
+        await Shop.findByIdAndDelete(shop._id);
+      }
       return res.status(500).json({ message: 'Failed to send verification email' });
     }
 
     res.status(201).json({ 
       message: 'Registration successful. Please check your email for verification code.',
       userId: user._id,
-      needsVerification: true
+      needsVerification: true,
+      shopId: shop ? shop._id : null
     });
   } catch (err) {
     console.error('Registration error:', err);
@@ -62,7 +116,7 @@ exports.verifyOTP = async (req, res) => {
   try {
     const { email, otp } = req.body;
 
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email }).populate('shopId');
     if (!user) {
       return res.status(400).json({ message: 'User not found' });
     }
@@ -81,17 +135,32 @@ exports.verifyOTP = async (req, res) => {
 
     const token = authService.generateToken(user);
 
+    // Prepare user response
+    const userResponse = {
+      _id: user._id,
+      email: user.email,
+      fullName: user.fullName,
+      role: user.role,
+      isEmailVerified: user.isEmailVerified,
+      createdAt: user.createdAt
+    };
+
+    // Add shop information if user is a shop owner
+    if (user.role === 'shop' && user.shopId) {
+      userResponse.shop = {
+        _id: user.shopId._id,
+        shopName: user.shopId.shopName,
+        verificationStatus: user.shopId.verificationStatus,
+        isLocationVerified: user.shopId.isLocationVerified,
+        isActive: user.shopId.isActive,
+        isLive: user.shopId.isLive
+      };
+    }
+
     res.json({ 
       message: 'Email verified successfully',
       token,
-      user: {
-        _id: user._id,
-        email: user.email,
-        fullName: user.fullName,
-        role: user.role,
-        isEmailVerified: user.isEmailVerified,
-        createdAt: user.createdAt
-      }
+      user: userResponse
     });
   } catch (err) {
     console.error('OTP verification error:', err);
@@ -151,6 +220,10 @@ exports.login = async (req, res) => {
       return res.status(400).json({ message: 'Invalid credentials' });
     }
 
+    if (!user.isActive) {
+      return res.status(403).json({ message: 'Account is deactivated' });
+    }
+
     if (!user.isEmailVerified) {
       return res.status(400).json({ 
         message: 'Please verify your email before logging in',
@@ -161,6 +234,22 @@ exports.login = async (req, res) => {
     const isMatch = await authService.comparePassword(password, user.password);
     if (!isMatch) {
       return res.status(400).json({ message: 'Invalid credentials' });
+    }
+
+    // Enrich with shop details if shop owner
+    let shopSummary = undefined;
+    if (user.role === 'shop' && user.shopId) {
+      const shop = await Shop.findById(user.shopId).select('shopName verificationStatus isLocationVerified isActive isLive');
+      if (shop) {
+        shopSummary = {
+          _id: shop._id,
+          shopName: shop.shopName,
+          verificationStatus: shop.verificationStatus,
+          isLocationVerified: shop.isLocationVerified,
+          isActive: shop.isActive,
+          isLive: shop.isLive
+        };
+      }
     }
 
     const token = authService.generateToken(user);
@@ -174,7 +263,8 @@ exports.login = async (req, res) => {
         fullName: user.fullName,
         role: user.role,
         isEmailVerified: user.isEmailVerified,
-        createdAt: user.createdAt
+        createdAt: user.createdAt,
+        shop: shopSummary
       }
     });
   } catch (err) {
@@ -254,7 +344,31 @@ exports.getProfile = async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    res.json({ user });
+    let shopSummary = undefined;
+    if (user.role === 'shop' && user.shopId) {
+      const shop = await Shop.findById(user.shopId).select('shopName verificationStatus isLocationVerified isActive isLive');
+      if (shop) {
+        shopSummary = {
+          _id: shop._id,
+          shopName: shop.shopName,
+          verificationStatus: shop.verificationStatus,
+          isLocationVerified: shop.isLocationVerified,
+          isActive: shop.isActive,
+          isLive: shop.isLive
+        };
+      }
+    }
+
+    res.json({ user: { 
+      _id: user._id,
+      email: user.email,
+      fullName: user.fullName,
+      role: user.role,
+      isEmailVerified: user.isEmailVerified,
+      isActive: user.isActive,
+      createdAt: user.createdAt,
+      shop: shopSummary
+    }});
   } catch (err) {
     console.error('Get profile error:', err);
     res.status(500).json({ message: 'Server error' });

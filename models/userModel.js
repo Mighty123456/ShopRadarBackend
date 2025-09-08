@@ -9,12 +9,20 @@ const userSchema = new mongoose.Schema({
   name: { type: String },
   picture: { type: String },
   isEmailVerified: { type: Boolean, default: false },
+  isActive: { type: Boolean, default: true },
   otp: {
     code: { type: String },
     expiresAt: { type: Date }
   },
   otpAttempts: { type: Number, default: 0 },
   lastOtpSent: { type: Date },
+  
+  // Shop owner specific fields
+  shopId: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'Shop' 
+  },
+  
   createdAt: { type: Date, default: Date.now },
 });
 

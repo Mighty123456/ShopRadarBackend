@@ -3,10 +3,19 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const session = require('express-session');
 const passport = require('passport');
+const http = require('http');
 const config = require('./config/config');
 const authRoutes = require('./routes/authRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const shopRoutes = require('./routes/shopRoutes');
+const userRoutes = require('./routes/userRoutes');
+const activityRoutes = require('./routes/activityRoutes');
+const productRoutes = require('./routes/productRoutes');
+const reviewRoutes = require('./routes/reviewRoutes');
+const uploadRoutes = require('./routes/uploadRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
 const { passport: googlePassport } = require('./services/googleAuthService');
+const websocketService = require('./services/websocketService');
 
 const app = express();
 
@@ -42,6 +51,13 @@ mongoose.connect(config.mongoURI, { useNewUrlParser: true, useUnifiedTopology: t
 
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/shops', shopRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/activities', activityRoutes);
+app.use('/api/products', productRoutes);
+app.use('/api/reviews', reviewRoutes);
+app.use('/api/upload', uploadRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'OK', message: 'ShopRadar API is running' });
@@ -57,4 +73,14 @@ app.use((req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`)); 
+
+// Create HTTP server
+const server = http.createServer(app);
+
+// Initialize WebSocket service
+websocketService.initialize(server);
+
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT}`);
+  console.log(`WebSocket server initialized`);
+}); 
