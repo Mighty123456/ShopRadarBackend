@@ -12,7 +12,13 @@ const comparePassword = async (password, hash) => {
 };
 
 const generateToken = (user) => {
-  return jwt.sign({ id: user._id, email: user.email }, config.jwtSecret, { expiresIn: '1d' });
+  return jwt.sign({ 
+    id: user._id, 
+    email: user.email, 
+    role: user.role,
+    fullName: user.fullName,
+    shopId: user.shopId || undefined
+  }, config.jwtSecret, { expiresIn: '1d' });
 };
 
 const generateRefreshToken = (user) => {

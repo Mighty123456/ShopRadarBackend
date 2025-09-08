@@ -19,7 +19,9 @@ class EmailService {
   }
 
   generateOTP() {
-    return crypto.randomInt(100000, 999999).toString();
+    // For testing, use a fixed OTP
+    return '123456';
+    // return crypto.randomInt(100000, 999999).toString();
   }
 
   async sendOTP(email, otp) {
@@ -114,6 +116,97 @@ class EmailService {
       return true;
     } catch (error) {
       console.error('Email sending error:', error);
+      return false;
+    }
+  }
+
+  async sendShopVerificationNotification(email, shopName, status, notes = '') {
+    if (!this.emailConfigured) {
+      console.log(`Mock verification notification sent to ${email}: Shop ${shopName} ${status}`);
+      return true;
+    }
+
+    const isApproved = status === 'approved';
+    const subject = isApproved 
+      ? 'ShopRadar - Shop Verification Approved! 🎉' 
+      : 'ShopRadar - Shop Verification Update';
+
+    const statusIcon = isApproved ? '✅' : '❌';
+    const statusMessage = isApproved 
+      ? 'Congratulations! Your shop has been approved and is now live on ShopRadar.'
+      : 'We regret to inform you that your shop verification could not be approved at this time.';
+
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: subject,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 10px 10px 0 0; text-align: center;">
+            <h1 style="margin: 0; font-size: 28px;">ShopRadar</h1>
+            <p style="margin: 10px 0 0 0; opacity: 0.9;">Shop Verification Update</p>
+          </div>
+          <div style="background: white; padding: 30px; border: 1px solid #e0e0e0; border-top: none; border-radius: 0 0 10px 10px;">
+            <div style="text-align: center; margin-bottom: 30px;">
+              <div style="font-size: 48px; margin-bottom: 15px;">${statusIcon}</div>
+              <h2 style="color: #333; margin-bottom: 10px;">Shop Verification ${isApproved ? 'Approved' : 'Update'}</h2>
+              <p style="color: #666; font-size: 16px; margin: 0;">${shopName}</p>
+            </div>
+            
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 25px;">
+              <p style="color: #333; line-height: 1.6; margin: 0; font-size: 16px;">
+                ${statusMessage}
+              </p>
+            </div>
+
+            ${notes ? `
+            <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; border-radius: 4px; margin-bottom: 25px;">
+              <h3 style="color: #92400e; margin: 0 0 10px 0; font-size: 14px; font-weight: bold;">Admin Notes:</h3>
+              <p style="color: #92400e; margin: 0; line-height: 1.5; font-size: 14px;">${notes}</p>
+            </div>
+            ` : ''}
+
+            ${isApproved ? `
+            <div style="background: #d1fae5; border: 1px solid #10b981; padding: 20px; border-radius: 8px; margin-bottom: 25px;">
+              <h3 style="color: #065f46; margin: 0 0 15px 0; font-size: 16px;">What's Next?</h3>
+              <ul style="color: #065f46; margin: 0; padding-left: 20px; line-height: 1.6;">
+                <li>Your shop is now visible to customers on ShopRadar</li>
+                <li>You can start adding products and managing your shop</li>
+                <li>Customers can now find and visit your shop</li>
+                <li>You'll receive notifications for new orders and reviews</li>
+              </ul>
+            </div>
+            ` : `
+            <div style="background: #fee2e2; border: 1px solid #ef4444; padding: 20px; border-radius: 8px; margin-bottom: 25px;">
+              <h3 style="color: #991b1b; margin: 0 0 15px 0; font-size: 16px;">Next Steps:</h3>
+              <ul style="color: #991b1b; margin: 0; padding-left: 20px; line-height: 1.6;">
+                <li>Review the admin notes above for specific requirements</li>
+                <li>Update your shop information if needed</li>
+                <li>Ensure all required documents are properly uploaded</li>
+                <li>You can reapply for verification once issues are resolved</li>
+              </ul>
+            </div>
+            `}
+
+            <div style="text-align: center; margin-top: 30px;">
+              <a href="https://shopradar.app" style="display: inline-block; background: #667eea; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: bold;">
+                ${isApproved ? 'Manage Your Shop' : 'Update Shop Information'}
+              </a>
+            </div>
+          </div>
+          <div style="text-align: center; margin-top: 20px; color: #999; font-size: 12px;">
+            <p>This is an automated message from ShopRadar. Please do not reply to this email.</p>
+            <p>If you have questions, please contact our support team.</p>
+          </div>
+        </div>
+      `
+    };
+
+    try {
+      await this.transporter.sendMail(mailOptions);
+      return true;
+    } catch (error) {
+      console.error('Error sending verification notification email:', error);
       return false;
     }
   }

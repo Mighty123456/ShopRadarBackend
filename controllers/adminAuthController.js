@@ -3,6 +3,7 @@ const Admin = require('../models/adminModel');
 const config = require('../config/config');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
+const { logActivity } = require('./activityController');
 
 const generateToken = (adminId) => {
   return jwt.sign(
@@ -63,6 +64,22 @@ const adminLogin = async (req, res) => {
     await admin.save();
 
     const token = generateToken(admin._id);
+
+    // Log the admin login activity
+    await logActivity({
+      type: 'admin_login',
+      description: `Admin ${admin.name} logged in successfully`,
+      adminId: admin._id,
+      metadata: {
+        adminEmail: admin.email,
+        adminRole: admin.role,
+        loginTime: new Date().toISOString()
+      },
+      severity: 'high',
+      status: 'success',
+      ipAddress: req.ip || req.connection.remoteAddress,
+      userAgent: req.get('User-Agent')
+    });
 
     res.status(200).json({
       success: true,
