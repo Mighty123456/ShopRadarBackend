@@ -1,22 +1,16 @@
-const pdfParse = require('pdf-parse');
+
 const fetch = require('node-fetch');
 
 /**
- * Fetch a PDF or image from a URL and extract text. For images, this can be extended to Tesseract.
- * For now, we support PDF via pdf-parse. Returns raw text.
+ * Fetch a document from a URL and extract text.
+ * Currently returns empty text to avoid using deprecated/vulnerable pdf parsing libs.
  */
 async function extractTextFromUrl(url) {
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`Failed to fetch document: ${resp.status}`);
-  const buffer = await resp.buffer();
-  // Attempt PDF parse
-  try {
-    const data = await pdfParse(buffer);
-    return data.text || '';
-  } catch (e) {
-    // Non-PDF or parse failure; return empty text (placeholder for image OCR)
-    return '';
-  }
+  // Buffer is fetched but not parsed to avoid vulnerable deps
+  await resp.buffer();
+  return '';
 }
 
 /**

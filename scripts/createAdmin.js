@@ -5,10 +5,7 @@ const config = require('../config/config');
 const createAdminUser = async () => {
   try {
     // Connect to MongoDB
-    await mongoose.connect(config.mongoURI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true
-    });
+    await mongoose.connect(config.mongoURI);
     
     console.log('Connected to MongoDB');
 

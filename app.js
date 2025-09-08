@@ -38,15 +38,13 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
-mongoose.connect(config.mongoURI, { useNewUrlParser: true, useUnifiedTopology: true })
+mongoose.connect(config.mongoURI)
   .then(() => {
     console.log('MongoDB connected');
-    console.log('Database URI:', config.mongoURI);
     console.log('Database name:', mongoose.connection.name);
   })
   .catch((err) => {
     console.error('MongoDB connection error:', err);
-    console.error('Connection string used:', config.mongoURI);
   });
 
 app.use('/api/auth', authRoutes);

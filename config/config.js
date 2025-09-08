@@ -1,7 +1,7 @@
 require('dotenv').config();
 
 module.exports = {
-  mongoURI: process.env.MONGODB_URI || 'mongodb+srv://ansh132002:piaMEdyq40de4Gtk@alphacluster.h1fav.mongodb.net/ShopRadar?retryWrites=true&w=majority&appName=AlphaCluster',
+  mongoURI: process.env.MONGODB_URI,
   
   jwtSecret: process.env.JWT_SECRET || 'your-secret-key',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
