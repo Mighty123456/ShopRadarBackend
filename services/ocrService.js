@@ -1,6 +1,4 @@
 
-const fetch = require('node-fetch');
-
 /**
  * Fetch a document from a URL and extract text.
  * Currently returns empty text to avoid using deprecated/vulnerable pdf parsing libs.
@@ -8,8 +6,8 @@ const fetch = require('node-fetch');
 async function extractTextFromUrl(url) {
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`Failed to fetch document: ${resp.status}`);
-  // Buffer is fetched but not parsed to avoid vulnerable deps
-  await resp.buffer();
+  // Consume body to avoid unused stream warnings
+  await resp.arrayBuffer();
   return '';
 }
 
