@@ -16,7 +16,11 @@ exports.register = async (req, res) => {
       licenseNumber,
       phone,
       address,
-      licenseDocumentUrl
+      licenseDocumentUrl,
+      // Location verification data
+      location,
+      gpsAddress,
+      isLocationVerified
     } = req.body;
     
     if (password.length < 8) {
@@ -70,19 +74,38 @@ exports.register = async (req, res) => {
         return res.status(400).json({ message: 'All shop fields are required' });
       }
       
-      shop = new Shop({
+      // Prepare shop data
+      const shopData = {
         ownerId: user._id,
         shopName,
         licenseNumber,
         phone,
         address,
-        isLocationVerified: false,
-        licenseDocument: licenseDocumentUrl ? {
+        isLocationVerified: isLocationVerified || false,
+        verificationStatus: 'pending'
+      };
+
+      // Add license document if provided
+      if (licenseDocumentUrl) {
+        shopData.licenseDocument = {
           url: licenseDocumentUrl,
           mimeType: 'application/pdf'
-        } : undefined,
-        verificationStatus: 'pending'
-      });
+        };
+      }
+
+      // Add location data if provided
+      if (location && location.latitude && location.longitude) {
+        shopData.location = {
+          type: 'Point',
+          coordinates: [location.longitude, location.latitude]
+        };
+      }
+
+      if (gpsAddress) {
+        shopData.gpsAddress = gpsAddress;
+      }
+
+      shop = new Shop(shopData);
 
       await shop.save();
 
