@@ -217,6 +217,110 @@ exports.getUserStats = async (req, res) => {
   }
 };
 
+// Get active users data
+exports.getActiveUsers = async (req, res) => {
+  try {
+    const { timeframe = '24h', page = 1, limit = 50 } = req.query;
+    
+    // Calculate time threshold based on timeframe
+    let timeThreshold;
+    switch (timeframe) {
+      case '1h':
+        timeThreshold = new Date(Date.now() - 60 * 60 * 1000);
+        break;
+      case '24h':
+        timeThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        break;
+      case '7d':
+        timeThreshold = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        break;
+      case '30d':
+        timeThreshold = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        break;
+      default:
+        timeThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    }
+    
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    
+    // Get active users (users who were active within the timeframe)
+    const activeUsers = await User.find({
+      lastActive: { $gte: timeThreshold },
+      isActive: true
+    })
+    .select('-password -otp')
+    .populate('shopId', 'name licenseNumber verificationStatus isActive')
+    .sort({ lastActive: -1 })
+    .skip(skip)
+    .limit(parseInt(limit));
+    
+    // Get counts for different timeframes
+    const now = new Date();
+    const oneHourAgo = new Date(now - 60 * 60 * 1000);
+    const oneDayAgo = new Date(now - 24 * 60 * 60 * 1000);
+    const oneWeekAgo = new Date(now - 7 * 24 * 60 * 60 * 1000);
+    const oneMonthAgo = new Date(now - 30 * 24 * 60 * 60 * 1000);
+    
+    const [activeLastHour, activeLastDay, activeLastWeek, activeLastMonth] = await Promise.all([
+      User.countDocuments({ lastActive: { $gte: oneHourAgo }, isActive: true }),
+      User.countDocuments({ lastActive: { $gte: oneDayAgo }, isActive: true }),
+      User.countDocuments({ lastActive: { $gte: oneWeekAgo }, isActive: true }),
+      User.countDocuments({ lastActive: { $gte: oneMonthAgo }, isActive: true })
+    ]);
+    
+    // Transform users to match frontend expectations
+    const transformedUsers = activeUsers.map(user => ({
+      id: user._id,
+      name: user.fullName || user.name || 'N/A',
+      email: user.email,
+      type: user.role === 'shop' ? 'shopkeeper' : 'shopper',
+      status: user.isActive ? 'active' : 'blocked',
+      joinedDate: user.createdAt.toISOString().split('T')[0],
+      lastActive: user.lastActive.toISOString(),
+      isEmailVerified: user.isEmailVerified,
+      shopInfo: user.shopId ? {
+        name: user.shopId.name,
+        licenseNumber: user.shopId.licenseNumber,
+        verificationStatus: user.shopId.verificationStatus,
+        isActive: user.shopId.isActive
+      } : null
+    }));
+    
+    const totalActiveUsers = await User.countDocuments({
+      lastActive: { $gte: timeThreshold },
+      isActive: true
+    });
+    
+    res.json({
+      success: true,
+      data: {
+        users: transformedUsers,
+        stats: {
+          activeLastHour,
+          activeLastDay,
+          activeLastWeek,
+          activeLastMonth,
+          totalActiveUsers
+        },
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: Math.ceil(totalActiveUsers / parseInt(limit)),
+          totalUsers: totalActiveUsers,
+          hasNext: parseInt(page) < Math.ceil(totalActiveUsers / parseInt(limit)),
+          hasPrev: parseInt(page) > 1
+        }
+      }
+    });
+    
+  } catch (error) {
+    console.error('Get active users error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch active users'
+    });
+  }
+};
+
 // Delete user
 exports.deleteUser = async (req, res) => {
   try {

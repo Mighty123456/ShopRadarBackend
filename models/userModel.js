@@ -23,6 +23,9 @@ const userSchema = new mongoose.Schema({
     ref: 'Shop' 
   },
   
+  // Activity tracking
+  lastActive: { type: Date, default: Date.now },
+  
   createdAt: { type: Date, default: Date.now },
 });
 
