@@ -16,6 +16,7 @@ const uploadRoutes = require('./routes/uploadRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const { passport: googlePassport } = require('./services/googleAuthService');
 const websocketService = require('./services/websocketService');
+const updateLastActive = require('./middleware/updateLastActive');
 
 const app = express();
 
@@ -37,6 +38,9 @@ app.use(session({
 
 app.use(passport.initialize());
 app.use(passport.session());
+
+// Update lastActive for authenticated users
+app.use(updateLastActive);
 
 mongoose.connect(config.mongoURI)
   .then(() => {

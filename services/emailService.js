@@ -19,9 +19,8 @@ class EmailService {
   }
 
   generateOTP() {
-    // For testing, use a fixed OTP
-    return '123456';
-    // return crypto.randomInt(100000, 999999).toString();
+    // Generate a random 6-digit OTP
+    return crypto.randomInt(100000, 999999).toString();
   }
 
   async sendOTP(email, otp) {

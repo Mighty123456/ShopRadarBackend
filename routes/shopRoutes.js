@@ -4,6 +4,7 @@ const shopController = require('../controllers/shopController');
 const adminAuthMiddleware = require('../middleware/adminAuthMiddleware');
 const authMiddleware = require('../middleware/authMiddleware');
 const shopOwnershipMiddleware = require('../middleware/shopOwnershipMiddleware');
+const requireApprovedShop = require('../middleware/requireApprovedShop');
 
 // Public routes (for customers)
 router.get('/nearby', shopController.getShopsNearLocation);
@@ -11,7 +12,7 @@ router.get('/nearby', shopController.getShopsNearLocation);
 // Shop owner routes (require shop owner authentication)
 router.get('/my-shop', authMiddleware, shopOwnershipMiddleware, shopController.getMyShop);
 router.put('/my-shop', authMiddleware, shopOwnershipMiddleware, shopController.updateMyShop);
-router.put('/my-shop/status', authMiddleware, shopOwnershipMiddleware, shopController.updateMyShopStatus);
+router.put('/my-shop/status', authMiddleware, shopOwnershipMiddleware, requireApprovedShop, shopController.updateMyShopStatus);
 router.get('/my-shop/stats', authMiddleware, shopOwnershipMiddleware, shopController.getMyShopStats);
 router.get('/my-shop/verification', authMiddleware, shopOwnershipMiddleware, shopController.getMyShopVerificationStatus);
 router.post('/my-shop/submit-gps', authMiddleware, shopOwnershipMiddleware, shopController.submitGpsAndVerifyAddress);
