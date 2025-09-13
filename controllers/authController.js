@@ -16,7 +16,7 @@ exports.register = async (req, res) => {
       licenseNumber,
       phone,
       address,
-      licenseDocumentUrl,
+      licenseDocument,
       // Location verification data
       location,
       gpsAddress,
@@ -86,10 +86,12 @@ exports.register = async (req, res) => {
       };
 
       // Add license document if provided
-      if (licenseDocumentUrl) {
+      if (licenseDocument && licenseDocument.url) {
         shopData.licenseDocument = {
-          url: licenseDocumentUrl,
-          mimeType: 'application/pdf'
+          url: licenseDocument.url,
+          publicId: licenseDocument.publicId,
+          mimeType: licenseDocument.mimeType || 'application/pdf',
+          uploadedAt: new Date()
         };
       }
 

@@ -28,12 +28,18 @@ const productSchema = new mongoose.Schema({
     required: true,
     min: 0
   },
+  stock: {
+    type: Number,
+    required: true,
+    min: 0,
+    default: 0
+  },
   
-  // Product images
+  // Product images (Cloudinary-backed)
   images: [{
-    filename: String,
-    originalName: String,
-    path: String,
+    url: { type: String, trim: true },
+    publicId: { type: String, trim: true },
+    mimeType: { type: String, trim: true },
     uploadedAt: { type: Date, default: Date.now }
   }],
   
