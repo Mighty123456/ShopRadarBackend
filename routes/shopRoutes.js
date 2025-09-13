@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const shopController = require('../controllers/shopController');
+const productController = require('../controllers/productController');
 const adminAuthMiddleware = require('../middleware/adminAuthMiddleware');
 const authMiddleware = require('../middleware/authMiddleware');
 const shopOwnershipMiddleware = require('../middleware/shopOwnershipMiddleware');
@@ -18,6 +19,14 @@ router.get('/my-shop/verification', authMiddleware, shopOwnershipMiddleware, sho
 router.post('/my-shop/submit-gps', authMiddleware, shopOwnershipMiddleware, shopController.submitGpsAndVerifyAddress);
 router.post('/my-shop/ocr-license', authMiddleware, shopOwnershipMiddleware, shopController.ocrAndValidateLicense);
 router.post('/my-shop/upload-photo', authMiddleware, shopOwnershipMiddleware, shopController.uploadShopPhotoAndCheckExif);
+
+// Shop owner product management routes
+router.get('/products', authMiddleware, shopOwnershipMiddleware, requireApprovedShop, productController.getMyProducts);
+router.put('/products/:id', authMiddleware, shopOwnershipMiddleware, requireApprovedShop, productController.updateMyProduct);
+router.delete('/products/:id', authMiddleware, shopOwnershipMiddleware, requireApprovedShop, productController.deleteMyProduct);
+
+// Unified product + offer creation route
+router.post('/products/unified', authMiddleware, shopOwnershipMiddleware, requireApprovedShop, productController.createProductWithOffer);
 
 // Admin routes (require admin authentication)
 router.get('/admin/all', adminAuthMiddleware, shopController.getAllShops);

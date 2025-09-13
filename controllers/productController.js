@@ -1,5 +1,6 @@
 const Product = require('../models/productModel');
 const Shop = require('../models/shopModel');
+const Offer = require('../models/offerModel');
 const { logActivity } = require('./activityController');
 
 // Get all products with pagination and filtering
@@ -232,6 +233,349 @@ exports.getProductStats = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch product statistics'
+    });
+  }
+};
+
+// Get shop owner's products
+exports.getMyProducts = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+    
+    const { category, status, search } = req.query;
+    
+    // Get shop ID from authenticated user
+    const shop = await Shop.findOne({ ownerId: req.user.id });
+    if (!shop) {
+      return res.status(404).json({
+        success: false,
+        message: 'Shop not found for this user'
+      });
+    }
+    
+    // Build filter object
+    const filter = { shopId: shop._id };
+    if (category && category !== 'all') {
+      filter.category = category;
+    }
+    if (status && status !== 'all') {
+      filter.status = status;
+    }
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } }
+      ];
+    }
+    
+    const products = await Product.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+    
+    const total = await Product.countDocuments(filter);
+    
+    // Transform products to match frontend expectations
+    const transformedProducts = products.map(product => ({
+      id: product._id,
+      name: product.name,
+      description: product.description,
+      category: product.category,
+      price: product.price,
+      stock: product.stock,
+      status: product.status,
+      images: product.images,
+      createdAt: product.createdAt,
+      updatedAt: product.updatedAt
+    }));
+    
+    res.json({
+      success: true,
+      data: {
+        products: transformedProducts,
+        pagination: {
+          currentPage: page,
+          totalPages: Math.ceil(total / limit),
+          totalProducts: total,
+          hasNext: page < Math.ceil(total / limit),
+          hasPrev: page > 1
+        }
+      }
+    });
+    
+  } catch (error) {
+    console.error('Get my products error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch products'
+    });
+  }
+};
+
+// Update shop owner's product
+exports.updateMyProduct = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description, category, price, stock, status } = req.body;
+    
+    // Get shop ID from authenticated user
+    const shop = await Shop.findOne({ ownerId: req.user.id });
+    if (!shop) {
+      return res.status(404).json({
+        success: false,
+        message: 'Shop not found for this user'
+      });
+    }
+    
+    // Find product and verify ownership
+    const product = await Product.findOne({ _id: id, shopId: shop._id });
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: 'Product not found or you do not have permission to update it'
+      });
+    }
+    
+    // Update product fields
+    if (name !== undefined) product.name = name;
+    if (description !== undefined) product.description = description;
+    if (category !== undefined) product.category = category;
+    if (price !== undefined) product.price = price;
+    if (stock !== undefined) product.stock = stock;
+    if (status !== undefined) product.status = status;
+    
+    await product.save();
+    
+    // Log the activity
+    await logActivity({
+      type: 'product_updated',
+      description: `Product "${product.name}" updated by shop owner`,
+      shopId: shop._id,
+      userId: req.user.id,
+      metadata: {
+        productName: product.name,
+        productCategory: product.category,
+        productPrice: product.price,
+        updatedFields: Object.keys(req.body)
+      },
+      severity: 'low',
+      status: 'success',
+      ipAddress: req.ip || req.connection.remoteAddress,
+      userAgent: req.get('User-Agent')
+    });
+    
+    res.json({
+      success: true,
+      message: 'Product updated successfully',
+      product: {
+        id: product._id,
+        name: product.name,
+        description: product.description,
+        category: product.category,
+        price: product.price,
+        stock: product.stock,
+        status: product.status,
+        images: product.images,
+        createdAt: product.createdAt,
+        updatedAt: product.updatedAt
+      }
+    });
+    
+  } catch (error) {
+    console.error('Update my product error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update product'
+    });
+  }
+};
+
+// Delete shop owner's product
+exports.deleteMyProduct = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Get shop ID from authenticated user
+    const shop = await Shop.findOne({ ownerId: req.user.id });
+    if (!shop) {
+      return res.status(404).json({
+        success: false,
+        message: 'Shop not found for this user'
+      });
+    }
+    
+    // Find product and verify ownership
+    const product = await Product.findOne({ _id: id, shopId: shop._id });
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: 'Product not found or you do not have permission to delete it'
+      });
+    }
+    
+    const productName = product.name;
+    
+    // Delete the product
+    await Product.findByIdAndDelete(id);
+    
+    // Log the activity
+    await logActivity({
+      type: 'product_deleted',
+      description: `Product "${productName}" deleted by shop owner`,
+      shopId: shop._id,
+      userId: req.user.id,
+      metadata: {
+        productName: productName,
+        productCategory: product.category,
+        productPrice: product.price
+      },
+      severity: 'medium',
+      status: 'success',
+      ipAddress: req.ip || req.connection.remoteAddress,
+      userAgent: req.get('User-Agent')
+    });
+    
+    res.json({
+      success: true,
+      message: 'Product deleted successfully'
+    });
+    
+  } catch (error) {
+    console.error('Delete my product error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete product'
+    });
+  }
+};
+
+// Unified endpoint: Create product with optional offer
+exports.createProductWithOffer = async (req, res) => {
+  try {
+    const { product, offer } = req.body;
+    
+    // Validate product data
+    if (!product || !product.name || !product.category || !product.price || product.stock === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: 'Product name, category, price, and stock are required'
+      });
+    }
+    
+    // Get shop ID from authenticated user
+    const shop = await Shop.findOne({ ownerId: req.user.id });
+    if (!shop) {
+      return res.status(404).json({
+        success: false,
+        message: 'Shop not found for this user'
+      });
+    }
+    
+    // Create product
+    const productData = {
+      shopId: shop._id,
+      name: product.name,
+      description: product.description || '',
+      category: product.category,
+      price: product.price,
+      stock: product.stock,
+      status: 'active'
+    };
+    
+    // Add image if provided
+    if (product.image) {
+      productData.images = [product.image];
+    }
+    
+    const newProduct = new Product(productData);
+    await newProduct.save();
+    
+    let newOffer = null;
+    
+    // Create offer if provided
+    if (offer && offer.title && offer.discountValue !== undefined) {
+      // Validate offer data
+      if (!offer.discountType || !offer.startDate || !offer.endDate) {
+        return res.status(400).json({
+          success: false,
+          message: 'Offer discount type, start date, and end date are required'
+        });
+      }
+      
+      const offerData = {
+        shopId: shop._id,
+        productId: newProduct._id,
+        title: offer.title,
+        description: offer.description || '',
+        discountType: offer.discountType,
+        discountValue: offer.discountValue,
+        startDate: new Date(offer.startDate),
+        endDate: new Date(offer.endDate),
+        maxUses: offer.maxUses || 0,
+        status: 'active'
+      };
+      
+      newOffer = new Offer(offerData);
+      await newOffer.save();
+    }
+    
+    // Log the activity
+    await logActivity({
+      type: 'product_created',
+      description: `Product "${newProduct.name}" created${newOffer ? ' with offer' : ''}`,
+      shopId: shop._id,
+      userId: req.user.id,
+      metadata: {
+        productName: newProduct.name,
+        productCategory: newProduct.category,
+        productPrice: newProduct.price,
+        hasOffer: !!newOffer,
+        offerTitle: newOffer?.title
+      },
+      severity: 'low',
+      status: 'success',
+      ipAddress: req.ip || req.connection.remoteAddress,
+      userAgent: req.get('User-Agent')
+    });
+    
+    res.status(201).json({
+      success: true,
+      message: newOffer 
+        ? 'Product with offer created successfully'
+        : 'Product created successfully',
+      product: {
+        id: newProduct._id,
+        name: newProduct.name,
+        description: newProduct.description,
+        category: newProduct.category,
+        price: newProduct.price,
+        stock: newProduct.stock,
+        status: newProduct.status,
+        images: newProduct.images,
+        createdAt: newProduct.createdAt
+      },
+      offer: newOffer ? {
+        id: newOffer._id,
+        title: newOffer.title,
+        description: newOffer.description,
+        discountType: newOffer.discountType,
+        discountValue: newOffer.discountValue,
+        startDate: newOffer.startDate,
+        endDate: newOffer.endDate,
+        maxUses: newOffer.maxUses,
+        currentUses: newOffer.currentUses,
+        status: newOffer.status,
+        createdAt: newOffer.createdAt
+      } : null
+    });
+    
+  } catch (error) {
+    console.error('Create product with offer error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create product'
     });
   }
 };
