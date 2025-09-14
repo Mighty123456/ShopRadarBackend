@@ -4,9 +4,12 @@ const config = require('../config/config');
 
 const adminAuthMiddleware = async (req, res, next) => {
   try {
+    console.log('Admin auth middleware called for:', req.path);
     const authHeader = req.headers.authorization;
+    console.log('Auth header:', authHeader ? 'Present' : 'Missing');
     
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      console.log('No valid auth header found');
       return res.status(401).json({
         success: false,
         message: 'Access denied. No token provided.'
