@@ -353,3 +353,202 @@ exports.toggleOfferStatus = async (req, res) => {
     });
   }
 };
+
+// Admin Methods
+
+// Get all offers (admin)
+exports.getAllOffers = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    // Build filter object
+    const filter = {};
+    
+    if (req.query.status && req.query.status !== 'all') {
+      filter.status = req.query.status;
+    }
+    
+    if (req.query.shopId) {
+      filter.shopId = req.query.shopId;
+    }
+    
+    if (req.query.search) {
+      filter.$or = [
+        { title: { $regex: req.query.search, $options: 'i' } },
+        { description: { $regex: req.query.search, $options: 'i' } }
+      ];
+    }
+
+    // Get offers with populated product and shop information
+    const offers = await Offer.find(filter)
+      .populate('productId', 'name category price stock')
+      .populate('shopId', 'name ownerName email phone address')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    const totalOffers = await Offer.countDocuments(filter);
+    const totalPages = Math.ceil(totalOffers / limit);
+
+    res.json({
+      success: true,
+      data: {
+        offers,
+        pagination: {
+          currentPage: page,
+          totalPages,
+          totalOffers,
+          hasNextPage: page < totalPages,
+          hasPrevPage: page > 1
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching all offers:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch offers'
+    });
+  }
+};
+
+// Get offer statistics (admin)
+exports.getOfferStats = async (req, res) => {
+  try {
+    const totalOffers = await Offer.countDocuments();
+    const activeOffers = await Offer.countDocuments({ status: 'active' });
+    const inactiveOffers = await Offer.countDocuments({ status: 'inactive' });
+    
+    // Get offers by discount type
+    const percentageOffers = await Offer.countDocuments({ discountType: 'Percentage' });
+    const fixedOffers = await Offer.countDocuments({ discountType: 'Fixed Amount' });
+    
+    // Get recent offers (last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const recentOffers = await Offer.countDocuments({ 
+      createdAt: { $gte: thirtyDaysAgo } 
+    });
+
+    // Get top performing offers (by usage)
+    const topOffers = await Offer.find()
+      .populate('productId', 'name')
+      .populate('shopId', 'name')
+      .sort({ currentUses: -1 })
+      .limit(5)
+      .select('title currentUses maxUses productId shopId');
+
+    res.json({
+      success: true,
+      data: {
+        totalOffers,
+        activeOffers,
+        inactiveOffers,
+        percentageOffers,
+        fixedOffers,
+        recentOffers,
+        topOffers
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching offer statistics:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch offer statistics'
+    });
+  }
+};
+
+// Get specific offer by ID (admin)
+exports.getOfferById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const offer = await Offer.findById(id)
+      .populate('productId', 'name category price stock description')
+      .populate('shopId', 'name ownerName email phone address');
+
+    if (!offer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Offer not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: offer
+    });
+  } catch (error) {
+    console.error('Error fetching offer:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch offer'
+    });
+  }
+};
+
+// Update offer status (admin)
+exports.updateOfferStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, notes } = req.body;
+
+    if (!['active', 'inactive', 'suspended'].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid status. Must be active, inactive, or suspended'
+      });
+    }
+
+    const offer = await Offer.findByIdAndUpdate(
+      id,
+      { 
+        status,
+        adminNotes: notes,
+        updatedAt: new Date()
+      },
+      { new: true }
+    ).populate('productId', 'name')
+     .populate('shopId', 'name');
+
+    if (!offer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Offer not found'
+      });
+    }
+
+    // Log the activity
+    await logActivity({
+      type: 'offer_status_updated',
+      description: `Offer "${offer.title}" status updated to ${status} by admin`,
+      shopId: offer.shopId,
+      userId: req.user.id,
+      metadata: {
+        offerId: offer._id,
+        offerTitle: offer.title,
+        newStatus: status,
+        adminNotes: notes
+      },
+      severity: 'medium',
+      status: 'success',
+      ipAddress: req.ip || req.connection.remoteAddress,
+      userAgent: req.get('User-Agent')
+    });
+
+    res.json({
+      success: true,
+      message: 'Offer status updated successfully',
+      data: offer
+    });
+  } catch (error) {
+    console.error('Error updating offer status:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update offer status'
+    });
+  }
+};
