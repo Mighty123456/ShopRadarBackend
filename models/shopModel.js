@@ -68,6 +68,8 @@ const shopSchema = new mongoose.Schema({
     url: { type: String, trim: true },
     publicId: { type: String, trim: true },
     mimeType: { type: String, trim: true },
+    localPath: { type: String, trim: true }, // Local file path
+    localFilename: { type: String, trim: true }, // Local filename
     uploadedAt: { type: Date, default: Date.now }
   },
   licenseOcr: {

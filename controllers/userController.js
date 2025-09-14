@@ -1,5 +1,9 @@
 const User = require('../models/userModel');
 const Shop = require('../models/shopModel');
+const Product = require('../models/productModel');
+const Offer = require('../models/offerModel');
+const Review = require('../models/reviewModel');
+const Activity = require('../models/activityModel');
 const { logActivity } = require('../controllers/activityController');
 
 // Get all users with pagination and filtering
@@ -333,24 +337,65 @@ exports.deleteUser = async (req, res) => {
         message: 'User not found'
       });
     }
-    
-    // If user is a shop owner, also delete their shop
+
+    // Track what gets deleted for logging
+    const deletedItems = {
+      user: true,
+      shop: false,
+      products: 0,
+      offers: 0,
+      reviews: 0,
+      activities: 0
+    };
+
+    // If user is a shop owner, delete all related data
     if (user.role === 'shop' && user.shopId) {
-      await Shop.findByIdAndDelete(user.shopId);
+      const shop = await Shop.findById(user.shopId);
+      if (shop) {
+        // Delete all products belonging to this shop
+        const deletedProducts = await Product.deleteMany({ shopId: user.shopId });
+        deletedItems.products = deletedProducts.deletedCount;
+
+        // Delete all offers belonging to this shop
+        const deletedOffers = await Offer.deleteMany({ shopId: user.shopId });
+        deletedItems.offers = deletedOffers.deletedCount;
+
+        // Delete all reviews for this shop
+        const deletedReviews = await Review.deleteMany({ shopId: user.shopId });
+        deletedItems.reviews = deletedReviews.deletedCount;
+
+        // Delete the shop
+        await Shop.findByIdAndDelete(user.shopId);
+        deletedItems.shop = true;
+      }
     }
-    
+
+    // Delete all reviews written by this user
+    const deletedUserReviews = await Review.deleteMany({ userId: id });
+    deletedItems.reviews += deletedUserReviews.deletedCount;
+
+    // Delete all activities related to this user
+    const deletedActivities = await Activity.deleteMany({ 
+      $or: [
+        { userId: id },
+        { adminId: id }
+      ]
+    });
+    deletedItems.activities = deletedActivities.deletedCount;
+
+    // Finally, delete the user
     await User.findByIdAndDelete(id);
     
     // Log the activity
     await logActivity({
       type: 'user_deleted',
-      description: `User ${user.name || user.email} deleted by admin`,
+      description: `User ${user.name || user.email} and all related data deleted by admin`,
       userId: user._id,
       adminId: req.admin?.id,
       metadata: {
         userEmail: user.email,
         userRole: user.role,
-        shopDeleted: user.role === 'shop' && user.shopId ? true : false
+        deletedItems: deletedItems
       },
       severity: 'critical',
       status: 'success',
@@ -360,14 +405,15 @@ exports.deleteUser = async (req, res) => {
     
     res.json({
       success: true,
-      message: 'User deleted successfully'
+      message: 'User and all related data deleted successfully',
+      deletedItems: deletedItems
     });
     
   } catch (error) {
     console.error('Delete user error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to delete user'
+      message: 'Failed to delete user and related data'
     });
   }
 };
