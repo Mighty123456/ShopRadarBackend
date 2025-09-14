@@ -25,6 +25,7 @@ const activitySchema = new mongoose.Schema({
       'offer_created',
       'offer_updated',
       'offer_deleted',
+      'offer_status_toggled',
       'review_posted',
       'review_flagged',
       'review_removed',
