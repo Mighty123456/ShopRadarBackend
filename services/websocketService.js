@@ -173,7 +173,10 @@ class WebSocketService {
       'shop_activated': 'shop_activities',
       'shop_deactivated': 'shop_activities',
       'product_added': 'product_activities',
+      'product_created': 'product_activities',
       'product_removed': 'product_activities',
+      'product_deleted': 'product_activities',
+      'product_updated': 'product_activities',
       'review_posted': 'review_activities',
       'review_flagged': 'review_activities',
       'review_removed': 'review_activities',
@@ -181,6 +184,37 @@ class WebSocketService {
     };
 
     return roomMap[activityType];
+  }
+
+  // Broadcast stats update to all connected admins
+  broadcastStatsUpdate(statsType, data) {
+    if (!this.io) return;
+
+    const statsData = {
+      type: statsType,
+      data: data,
+      timestamp: new Date().toISOString()
+    };
+
+    // Broadcast to all admins
+    this.io.to('admin_room').emit('stats_update', statsData);
+
+    console.log(`Broadcasted stats update: ${statsType}`);
+  }
+
+  // Broadcast product count update
+  broadcastProductCountUpdate(count) {
+    this.broadcastStatsUpdate('product_count', { totalProducts: count });
+  }
+
+  // Broadcast shop count update
+  broadcastShopCountUpdate(count) {
+    this.broadcastStatsUpdate('shop_count', { totalShops: count });
+  }
+
+  // Broadcast user count update
+  broadcastUserCountUpdate(count) {
+    this.broadcastStatsUpdate('user_count', { totalUsers: count });
   }
 
   // Helper function to calculate time ago
