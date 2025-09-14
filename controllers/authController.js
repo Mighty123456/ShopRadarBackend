@@ -91,6 +91,8 @@ exports.register = async (req, res) => {
           url: licenseDocument.url,
           publicId: licenseDocument.publicId,
           mimeType: licenseDocument.mimeType || 'application/pdf',
+          localPath: licenseDocument.localPath || null,
+          localFilename: licenseDocument.localFilename || null,
           uploadedAt: new Date()
         };
       }
