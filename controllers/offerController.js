@@ -359,6 +359,8 @@ exports.toggleOfferStatus = async (req, res) => {
 // Get all offers (admin)
 exports.getAllOffers = async (req, res) => {
   try {
+    console.log('Admin getAllOffers called with query:', req.query);
+    
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
@@ -381,6 +383,8 @@ exports.getAllOffers = async (req, res) => {
       ];
     }
 
+    console.log('Filter object:', filter);
+
     // Get offers with populated product and shop information
     const offers = await Offer.find(filter)
       .populate('productId', 'name category price stock')
@@ -389,8 +393,12 @@ exports.getAllOffers = async (req, res) => {
       .skip(skip)
       .limit(limit);
 
+    console.log('Found offers:', offers.length);
+
     const totalOffers = await Offer.countDocuments(filter);
     const totalPages = Math.ceil(totalOffers / limit);
+
+    console.log('Total offers:', totalOffers);
 
     res.json({
       success: true,
