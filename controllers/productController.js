@@ -2,6 +2,7 @@ const Product = require('../models/productModel');
 const Shop = require('../models/shopModel');
 const Offer = require('../models/offerModel');
 const { logActivity } = require('./activityController');
+const websocketService = require('../services/websocketService');
 
 // Get all products with pagination and filtering
 exports.getAllProducts = async (req, res) => {
@@ -366,6 +367,10 @@ exports.updateMyProduct = async (req, res) => {
       userAgent: req.get('User-Agent')
     });
     
+    // Broadcast product count update
+    const totalProducts = await Product.countDocuments({ status: 'active' });
+    websocketService.broadcastProductCountUpdate(totalProducts);
+
     res.json({
       success: true,
       message: 'Product updated successfully',
@@ -437,6 +442,10 @@ exports.deleteMyProduct = async (req, res) => {
       userAgent: req.get('User-Agent')
     });
     
+    // Broadcast product count update
+    const totalProducts = await Product.countDocuments({ status: 'active' });
+    websocketService.broadcastProductCountUpdate(totalProducts);
+
     res.json({
       success: true,
       message: 'Product deleted successfully'
@@ -540,6 +549,10 @@ exports.createProductWithOffer = async (req, res) => {
       userAgent: req.get('User-Agent')
     });
     
+    // Broadcast product count update
+    const totalProducts = await Product.countDocuments({ status: 'active' });
+    websocketService.broadcastProductCountUpdate(totalProducts);
+
     res.status(201).json({
       success: true,
       message: newOffer 

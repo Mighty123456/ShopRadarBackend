@@ -4,7 +4,10 @@ const shopOwnershipMiddleware = async (req, res, next) => {
   try {
     // Check if user is authenticated
     if (!req.user || !req.user.id) {
-      return res.status(401).json({ message: 'Authentication required' });
+      return res.status(401).json({ 
+        success: false,
+        message: 'Authentication required' 
+      });
     }
 
     // Debug: Log user info
@@ -20,6 +23,7 @@ const shopOwnershipMiddleware = async (req, res, next) => {
     if (!shop) {
       console.log('No shop found for user:', req.user.id);
       return res.status(403).json({ 
+        success: false,
         message: 'No shop found for this user. Please register a shop first.' 
       });
     }
@@ -28,6 +32,7 @@ const shopOwnershipMiddleware = async (req, res, next) => {
     if (req.user.role !== 'shop') {
       console.log('User role is not shop:', req.user.role);
       return res.status(403).json({ 
+        success: false,
         message: 'Access denied. This endpoint is only for shop owners.' 
       });
     }
@@ -37,7 +42,10 @@ const shopOwnershipMiddleware = async (req, res, next) => {
     next();
   } catch (err) {
     console.error('Shop ownership middleware error:', err);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error' 
+    });
   }
 };
 
