@@ -194,20 +194,24 @@ exports.updateProductStatus = async (req, res) => {
   }
 };
 
-// Get product statistics
+// Get product statistics (optionally per shop via ?shopId=...)
 exports.getProductStats = async (req, res) => {
   try {
-    const totalProducts = await Product.countDocuments();
-    const activeProducts = await Product.countDocuments({ status: 'active' });
-    const removedProducts = await Product.countDocuments({ status: 'removed' });
-    const flaggedProducts = await Product.countDocuments({ status: 'flagged' });
+    const { shopId } = req.query;
+
+    const baseFilter = shopId ? { shopId } : {};
+
+    const totalProducts = await Product.countDocuments({ ...baseFilter });
+    const activeProducts = await Product.countDocuments({ ...baseFilter, status: 'active' });
+    const removedProducts = await Product.countDocuments({ ...baseFilter, status: 'removed' });
+    const flaggedProducts = await Product.countDocuments({ ...baseFilter, status: 'flagged' });
     
     // Get products created in the last 30 days
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const newProducts = await Product.countDocuments({ createdAt: { $gte: thirtyDaysAgo } });
+    const newProducts = await Product.countDocuments({ ...baseFilter, createdAt: { $gte: thirtyDaysAgo } });
     
     // Get products by category
-    const categoryStats = await Product.aggregate([
+    const categoryPipeline = [
       {
         $group: {
           _id: '$category',
@@ -215,7 +219,11 @@ exports.getProductStats = async (req, res) => {
         }
       },
       { $sort: { count: -1 } }
-    ]);
+    ];
+    if (shopId) {
+      categoryPipeline.unshift({ $match: { shopId: require('mongoose').Types.ObjectId.createFromHexString(shopId) } });
+    }
+    const categoryStats = await Product.aggregate(categoryPipeline);
     
     res.json({
       success: true,
@@ -367,8 +375,8 @@ exports.updateMyProduct = async (req, res) => {
       userAgent: req.get('User-Agent')
     });
     
-    // Broadcast product count update
-    const totalProducts = await Product.countDocuments({ status: 'active' });
+    // Broadcast product count update (total products)
+    const totalProducts = await Product.countDocuments();
     websocketService.broadcastProductCountUpdate(totalProducts);
 
     res.json({
@@ -442,8 +450,8 @@ exports.deleteMyProduct = async (req, res) => {
       userAgent: req.get('User-Agent')
     });
     
-    // Broadcast product count update
-    const totalProducts = await Product.countDocuments({ status: 'active' });
+    // Broadcast product count update (total products)
+    const totalProducts = await Product.countDocuments();
     websocketService.broadcastProductCountUpdate(totalProducts);
 
     res.json({
@@ -549,8 +557,8 @@ exports.createProductWithOffer = async (req, res) => {
       userAgent: req.get('User-Agent')
     });
     
-    // Broadcast product count update
-    const totalProducts = await Product.countDocuments({ status: 'active' });
+    // Broadcast product count update (total products)
+    const totalProducts = await Product.countDocuments();
     websocketService.broadcastProductCountUpdate(totalProducts);
 
     res.status(201).json({

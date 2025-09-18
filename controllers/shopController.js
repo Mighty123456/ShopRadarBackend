@@ -1,5 +1,8 @@
 const Shop = require('../models/shopModel');
 const User = require('../models/userModel');
+const Product = require('../models/productModel');
+const Offer = require('../models/offerModel');
+const Review = require('../models/reviewModel');
 const emailService = require('../services/emailService');
 const { reverseGeocode, computeAddressMatchScore } = require('../services/geocodingService');
 const { extractTextFromUrl, extractLicenseDetails } = require('../services/ocrService');
@@ -526,13 +529,25 @@ exports.getMyShopStats = async (req, res) => {
       });
     }
     
-    // In a real implementation, you would query actual data
-    // For now, return mock data
+    // Aggregate live stats for the shop
+    const [
+      totalProducts,
+      activeOffers,
+      customerReviews
+    ] = await Promise.all([
+      Product.countDocuments({ shopId: shop._id }),
+      Offer.countDocuments({ shopId: shop._id, status: 'active' }),
+      Review.countDocuments({ shopId: shop._id })
+    ]);
+
+    // Placeholder for today's views (requires analytics events collection)
+    const todaysViews = 0;
+
     const stats = {
-      totalProducts: 0, // Would query from products collection
-      activeOffers: 0,  // Would query from offers collection
-      todaysViews: 0,   // Would query from analytics
-      customerReviews: 0, // Would query from reviews collection
+      totalProducts,
+      activeOffers,
+      todaysViews,
+      customerReviews,
       shopStatus: {
         verificationStatus: shop.verificationStatus,
         isActive: shop.isActive,

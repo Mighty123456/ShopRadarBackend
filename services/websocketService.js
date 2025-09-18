@@ -207,6 +207,11 @@ class WebSocketService {
     this.broadcastStatsUpdate('product_count', { totalProducts: count });
   }
 
+  // Broadcast offer count update
+  broadcastOfferCountUpdate(count) {
+    this.broadcastStatsUpdate('offer_count', { totalOffers: count });
+  }
+
   // Broadcast shop count update
   broadcastShopCountUpdate(count) {
     this.broadcastStatsUpdate('shop_count', { totalShops: count });
