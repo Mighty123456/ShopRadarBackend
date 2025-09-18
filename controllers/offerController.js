@@ -2,6 +2,7 @@ const Offer = require('../models/offerModel');
 const Shop = require('../models/shopModel');
 const Product = require('../models/productModel');
 const { logActivity } = require('./activityController');
+const websocketService = require('../services/websocketService');
 
 // Get all offers for a shop
 exports.getMyOffers = async (req, res) => {
@@ -119,6 +120,14 @@ exports.createOffer = async (req, res) => {
       userAgent: req.get('User-Agent')
     });
 
+    // Broadcast offer count update (total offers)
+    try {
+      const totalOffers = await Offer.countDocuments();
+      websocketService.broadcastOfferCountUpdate(totalOffers);
+    } catch (countErr) {
+      console.error('Failed to broadcast offer count:', countErr);
+    }
+
     res.status(201).json({
       success: true,
       message: 'Offer created successfully',
@@ -189,6 +198,14 @@ exports.updateOffer = async (req, res) => {
       userAgent: req.get('User-Agent')
     });
 
+    // Recalculate and broadcast total offer count
+    try {
+      const totalOffers = await Offer.countDocuments();
+      websocketService.broadcastOfferCountUpdate(totalOffers);
+    } catch (countErr) {
+      console.error('Failed to broadcast offer count:', countErr);
+    }
+
     res.json({
       success: true,
       message: 'Offer updated successfully',
@@ -242,6 +259,14 @@ exports.deleteOffer = async (req, res) => {
       ipAddress: req.ip || req.connection.remoteAddress,
       userAgent: req.get('User-Agent')
     });
+
+    // Broadcast total offer count after deletion
+    try {
+      const totalOffers = await Offer.countDocuments();
+      websocketService.broadcastOfferCountUpdate(totalOffers);
+    } catch (countErr) {
+      console.error('Failed to broadcast offer count:', countErr);
+    }
 
     res.json({
       success: true,
@@ -339,6 +364,14 @@ exports.toggleOfferStatus = async (req, res) => {
       userAgent: req.get('User-Agent')
     });
 
+    // Broadcast total offer count after status toggle
+    try {
+      const totalOffers = await Offer.countDocuments();
+      websocketService.broadcastOfferCountUpdate(totalOffers);
+    } catch (countErr) {
+      console.error('Failed to broadcast offer count:', countErr);
+    }
+
     res.json({
       success: true,
       message: `Offer ${offer.status === 'active' ? 'activated' : 'deactivated'} successfully`,
@@ -422,26 +455,30 @@ exports.getAllOffers = async (req, res) => {
   }
 };
 
-// Get offer statistics (admin)
+// Get offer statistics (admin) optionally per shop via ?shopId=...
 exports.getOfferStats = async (req, res) => {
   try {
-    const totalOffers = await Offer.countDocuments();
-    const activeOffers = await Offer.countDocuments({ status: 'active' });
-    const inactiveOffers = await Offer.countDocuments({ status: 'inactive' });
+    const { shopId } = req.query;
+    const baseFilter = shopId ? { shopId } : {};
+
+    const totalOffers = await Offer.countDocuments({ ...baseFilter });
+    const activeOffers = await Offer.countDocuments({ ...baseFilter, status: 'active' });
+    const inactiveOffers = await Offer.countDocuments({ ...baseFilter, status: 'inactive' });
     
     // Get offers by discount type
-    const percentageOffers = await Offer.countDocuments({ discountType: 'Percentage' });
-    const fixedOffers = await Offer.countDocuments({ discountType: 'Fixed Amount' });
+    const percentageOffers = await Offer.countDocuments({ ...baseFilter, discountType: 'Percentage' });
+    const fixedOffers = await Offer.countDocuments({ ...baseFilter, discountType: 'Fixed Amount' });
     
     // Get recent offers (last 30 days)
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     const recentOffers = await Offer.countDocuments({ 
+      ...baseFilter,
       createdAt: { $gte: thirtyDaysAgo } 
     });
 
     // Get top performing offers (by usage)
-    const topOffers = await Offer.find()
+    const topOffers = await Offer.find(baseFilter)
       .populate('productId', 'name')
       .populate('shopId', 'name')
       .sort({ currentUses: -1 })
