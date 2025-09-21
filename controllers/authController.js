@@ -109,6 +109,12 @@ exports.register = async (req, res) => {
         shopData.gpsAddress = gpsAddress;
       }
 
+      // For initial registration, be more lenient with location verification
+      // The strict verification will happen in the GPS submission step
+      if (isLocationVerified !== undefined) {
+        shopData.isLocationVerified = isLocationVerified;
+      }
+
       shop = new Shop(shopData);
 
       await shop.save();
