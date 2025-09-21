@@ -4,7 +4,7 @@ const Product = require('../models/productModel');
 const Offer = require('../models/offerModel');
 const Review = require('../models/reviewModel');
 const emailService = require('../services/emailService');
-const { reverseGeocode, computeAddressMatchScore } = require('../services/geocodingService');
+const { reverseGeocode, forwardGeocode, computeAddressMatchScore } = require('../services/geocodingService');
 const { extractTextFromUrl, extractLicenseDetails } = require('../services/ocrService');
 const { uploadFromUrl } = require('../services/cloudinaryService');
 const { parseExifFromImageUrl } = require('../services/exifService');
@@ -408,12 +408,43 @@ exports.ocrAndValidateLicense = async (req, res) => {
       processedAt: new Date()
     };
 
-    // Compare
+    // Compare license number
     const licMatch = !!extractedLicenseNumber && extractedLicenseNumber.replace(/\s/g, '') === shop.licenseNumber.replace(/\s/g, '');
+    
+    // Compare addresses using text similarity
     const addrScore = computeAddressMatchScore(shop.address, extractedAddress || '');
     const gpsAddrScore = computeAddressMatchScore(shop.reverseGeocodedAddress || '', extractedAddress || '');
 
-    shop.flags.licenceMismatch = !licMatch || addrScore < 60;
+    // NEW: GPS distance comparison for PDF address vs current location
+    let pdfGpsDistance = null;
+    let pdfWithinShopArea = false;
+    
+    if (extractedAddress && shop.location && Array.isArray(shop.location.coordinates)) {
+      try {
+        // Forward geocode the extracted PDF address to get GPS coordinates
+        const pdfGeocodeResult = await forwardGeocode(extractedAddress);
+        
+        if (pdfGeocodeResult && typeof pdfGeocodeResult.latitude === 'number' && typeof pdfGeocodeResult.longitude === 'number') {
+          // Calculate distance between PDF address GPS and current shop GPS
+          const [shopLng, shopLat] = shop.location.coordinates;
+          pdfGpsDistance = haversineMeters(shopLat, shopLng, pdfGeocodeResult.latitude, pdfGeocodeResult.longitude);
+          pdfWithinShopArea = pdfGpsDistance <= 100; // 100m tolerance
+          
+          console.log(`PDF address GPS distance: ${pdfGpsDistance.toFixed(1)}m, within 100m: ${pdfWithinShopArea}`);
+        }
+      } catch (geocodeError) {
+        console.error('Error geocoding PDF address:', geocodeError);
+      }
+    }
+
+    // Enhanced verification logic:
+    // License mismatch if:
+    // 1. License number doesn't match, OR
+    // 2. Address similarity is poor (< 60%) AND PDF GPS distance is > 100m (if available)
+    const poorAddressMatch = addrScore < 60;
+    const pdfLocationMismatch = pdfGpsDistance !== null && pdfGpsDistance > 100;
+    
+    shop.flags.licenceMismatch = !licMatch || (poorAddressMatch && pdfLocationMismatch);
     await shop.save();
 
     res.json({
@@ -422,6 +453,10 @@ exports.ocrAndValidateLicense = async (req, res) => {
         licNumberMatch: licMatch,
         formVsLicenceAddressScore: addrScore,
         gpsVsLicenceAddressScore: gpsAddrScore,
+        pdfGpsDistance: pdfGpsDistance ? Math.round(pdfGpsDistance) : null,
+        pdfWithinShopArea,
+        pdfAddressGeocoded: pdfGpsDistance !== null,
+        toleranceUsed: '100m',
         flaggedForReview: shop.flags.licenceMismatch
       }
     });
