@@ -348,13 +348,25 @@ exports.submitGpsAndVerifyAddress = async (req, res) => {
     shop.reverseGeocodedAddress = reverseAddress;
     const matchScore = computeAddressMatchScore(shop.address, reverseAddress);
     shop.addressMatchScore = matchScore;
+    
     // Compute distance to reverse-geocoded point when available
     let distanceMeters = undefined;
     if (result && typeof result.latitude === 'number' && typeof result.longitude === 'number') {
       distanceMeters = haversineMeters(latitude, longitude, result.latitude, result.longitude);
     }
-    const withinOneKm = typeof distanceMeters === 'number' ? distanceMeters <= 1000 : false;
-    shop.isLocationVerified = withinOneKm || matchScore >= 70;
+    
+    // More flexible location verification:
+    // 1. Allow 100m tolerance for shop movement (instead of strict 1km)
+    // 2. Consider address match score as primary factor
+    // 3. Allow verification if either condition is met:
+    //    - Address match score >= 60% (reduced from 70%)
+    //    - Distance within 100m of reverse-geocoded location
+    const withinShopArea = typeof distanceMeters === 'number' ? distanceMeters <= 100 : false;
+    const goodAddressMatch = matchScore >= 60;
+    
+    // Location is verified if shopkeeper is within 100m of the address location
+    // OR if the address match score is good (60%+)
+    shop.isLocationVerified = withinShopArea || goodAddressMatch;
     shop.flags.addressMismatch = !(shop.isLocationVerified);
 
     await shop.save();
@@ -365,6 +377,9 @@ exports.submitGpsAndVerifyAddress = async (req, res) => {
         addressMatchScore: matchScore,
         isLocationVerified: shop.isLocationVerified,
         distanceMeters,
+        withinShopArea,
+        goodAddressMatch,
+        toleranceUsed: '100m',
         flaggedForReview: shop.flags.addressMismatch
       }
     });
