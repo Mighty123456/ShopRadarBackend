@@ -3,6 +3,9 @@ const router = express.Router();
 const productController = require('../controllers/productController');
 const adminAuthMiddleware = require('../middleware/adminAuthMiddleware');
 
+// Public product search
+router.get('/search', productController.searchProductsPublic);
+
 // All product routes require admin authentication
 router.use(adminAuthMiddleware);
 

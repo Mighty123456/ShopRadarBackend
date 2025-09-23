@@ -4,6 +4,83 @@ const Offer = require('../models/offerModel');
 const { logActivity } = require('./activityController');
 const websocketService = require('../services/websocketService');
 
+// Public: Search products (keyword + filters + pagination)
+exports.searchProductsPublic = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = Math.min(parseInt(req.query.limit) || 10, 50);
+    const skip = (page - 1) * limit;
+
+    const {
+      q, // keyword
+      category,
+      minPrice,
+      maxPrice,
+      inStock,
+      sort // relevance|price_asc|price_desc|new
+    } = req.query;
+
+    const filter = { status: 'active' };
+    if (category) {
+      filter.category = category;
+    }
+    if (minPrice != null || maxPrice != null) {
+      filter.price = {};
+      if (minPrice != null) filter.price.$gte = Number(minPrice);
+      if (maxPrice != null) filter.price.$lte = Number(maxPrice);
+    }
+    if (inStock === 'true') {
+      filter.stock = { $gt: 0 };
+    }
+    if (q) {
+      const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      filter.$or = [
+        { name: regex },
+        { description: regex },
+        { category: regex }
+      ];
+    }
+
+    // Sorting
+    let sortOption = { createdAt: -1, _id: 1 };
+    if (sort === 'price_asc') sortOption = { price: 1, _id: 1 };
+    else if (sort === 'price_desc') sortOption = { price: -1, _id: 1 };
+
+    const [items, total] = await Promise.all([
+      Product.find(filter)
+        .select('name description category price images status createdAt shopId')
+        .populate('shopId', 'shopName')
+        .sort(sortOption)
+        .skip(skip)
+        .limit(limit),
+      Product.countDocuments(filter)
+    ]);
+
+    res.json({
+      success: true,
+      data: items.map(p => ({
+        id: p._id,
+        name: p.name,
+        description: p.description,
+        category: p.category,
+        price: p.price,
+        image: Array.isArray(p.images) && p.images.length ? p.images[0].url : undefined,
+        shop: p.shopId ? { id: p.shopId._id, name: p.shopId.shopName } : null,
+        createdAt: p.createdAt
+      })),
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(total / limit),
+        totalItems: total,
+        limit
+      }
+    });
+  } catch (error) {
+    console.error('Public product search error:', error);
+    res.status(500).json({ success: false, message: 'Failed to search products' });
+  }
+};
+
 // Get all products with pagination and filtering
 exports.getAllProducts = async (req, res) => {
   try {
