@@ -9,6 +9,80 @@ const { extractTextFromUrl, extractLicenseDetails } = require('../services/ocrSe
 const { uploadFromUrl } = require('../services/cloudinaryService');
 const { parseExifFromImageUrl } = require('../services/exifService');
 
+// Public: Search shops (keyword + optional geo radius + pagination)
+exports.searchShopsPublic = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = Math.min(parseInt(req.query.limit) || 10, 50);
+    const skip = (page - 1) * limit;
+
+    const { q, latitude, longitude, radius = 5000, sort } = req.query; // radius in meters
+
+    const filter = {
+      verificationStatus: 'approved',
+      isActive: true,
+      isLive: true
+    };
+
+    if (q) {
+      const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      filter.$or = [
+        { shopName: regex },
+        { address: regex },
+        { state: regex }
+      ];
+    }
+
+    // Geo filter when lat/lng provided
+    if (latitude && longitude) {
+      filter.location = {
+        $near: {
+          $geometry: { type: 'Point', coordinates: [parseFloat(longitude), parseFloat(latitude)] },
+          $maxDistance: parseInt(radius)
+        }
+      };
+    }
+
+    let sortOption = { createdAt: -1, _id: 1 };
+    if (!filter.location && sort === 'name') sortOption = { shopName: 1, _id: 1 };
+
+    const [shops, total] = await Promise.all([
+      Shop.find(filter)
+        .select('shopName address phone location verificationStatus createdAt')
+        .sort(sortOption)
+        .skip(skip)
+        .limit(limit),
+      Shop.countDocuments({
+        verificationStatus: 'approved',
+        isActive: true,
+        isLive: true,
+        ...(q ? { $or: [ { shopName: new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') }, { address: new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') }, { state: new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') } ] } : {})
+      })
+    ]);
+
+    res.json({
+      success: true,
+      data: shops.map(s => ({
+        id: s._id,
+        name: s.shopName,
+        address: s.address,
+        phone: s.phone,
+        location: s.location,
+        createdAt: s.createdAt
+      })),
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(total / limit),
+        totalItems: total,
+        limit
+      }
+    });
+  } catch (err) {
+    console.error('Public shop search error:', err);
+    res.status(500).json({ success: false, message: 'Failed to search shops' });
+  }
+};
+
 // Get all shops for admin review
 exports.getAllShops = async (req, res) => {
   try {
