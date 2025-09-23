@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node app.js",
     "dev": "nodemon app.js",
-    "test:flow": "node scripts/test_verification_flow.js"
+    "test:flow": "node scripts/test_verification_flow.js",
+    "test:email": "node scripts/send_test_email.js"
   },
   "keywords": [
     "express",
