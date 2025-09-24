@@ -1,76 +1,71 @@
 const fetch = require('node-fetch');
 
+// Google Geocoding API
+// Requires env: GOOGLE_MAPS_API_KEY
+
 /**
- * Reverse geocode coordinates using Google Maps Geocoding API
- * @param {number} latitude
- * @param {number} longitude
- * @returns {Promise<{formattedAddress: string, components: any} | null>}
- */
+* Reverse geocode coordinates using Google Geocoding API
+* @param {number} latitude
+* @param {number} longitude
+* @returns {Promise<{formattedAddress: string, components: any, latitude?: number, longitude?: number} | null>}
+*/
 async function reverseGeocode(latitude, longitude) {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) {
-    console.warn('reverseGeocode: GOOGLE_MAPS_API_KEY is not configured; skipping reverse geocoding');
+    console.warn('GOOGLE_MAPS_API_KEY is not set');
     return null;
   }
-
-  const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${apiKey}`;
+  const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${encodeURIComponent(latitude)},${encodeURIComponent(longitude)}&key=${encodeURIComponent(apiKey)}`;
   const resp = await fetch(url);
   if (!resp.ok) {
     throw new Error(`Reverse geocoding failed with status ${resp.status}`);
   }
   const data = await resp.json();
-  if (data.status !== 'OK' || !data.results || data.results.length === 0) {
+  if (!data || !Array.isArray(data.results) || data.results.length === 0) {
     return null;
   }
   const best = data.results[0];
-  const loc = best.geometry && best.geometry.location ? best.geometry.location : undefined;
-  const geocodedLat = loc ? loc.lat : undefined;
-  const geocodedLng = loc ? loc.lng : undefined;
-  return { formattedAddress: best.formatted_address, components: best.address_components, latitude: geocodedLat, longitude: geocodedLng };
+  const formatted = best.formatted_address || '';
+  const loc = best.geometry && best.geometry.location;
+  const lat = loc && typeof loc.lat === 'number' ? loc.lat : undefined;
+  const lng = loc && typeof loc.lng === 'number' ? loc.lng : undefined;
+  return { formattedAddress: formatted, components: best.address_components || best, latitude: lat, longitude: lng };
 }
 
 /**
- * Forward geocode address to get GPS coordinates using Google Maps Geocoding API
- * @param {string} address
- * @returns {Promise<{latitude: number, longitude: number, formattedAddress: string} | null>}
- */
+* Forward geocode address to get GPS coordinates using Google Geocoding API
+* @param {string} address
+* @returns {Promise<{latitude: number, longitude: number, formattedAddress: string} | null>}
+*/
 async function forwardGeocode(address) {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) {
-    console.warn('forwardGeocode: GOOGLE_MAPS_API_KEY is not configured; skipping forward geocoding');
+    console.warn('GOOGLE_MAPS_API_KEY is not set');
     return null;
   }
-
   if (!address || address.trim().length === 0) {
     return null;
   }
-
-  const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address.trim())}&key=${apiKey}`;
-  
+  const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address.trim())}&key=${encodeURIComponent(apiKey)}`;
   try {
     const resp = await fetch(url);
     if (!resp.ok) {
       throw new Error(`Forward geocoding failed with status ${resp.status}`);
     }
     const data = await resp.json();
-    
-    if (data.status !== 'OK' || !data.results || data.results.length === 0) {
-      console.warn(`Forward geocoding failed for address: ${address}, status: ${data.status}`);
+    if (!data || !Array.isArray(data.results) || data.results.length === 0) {
+      console.warn(`Forward geocoding failed for address: ${address}`);
       return null;
     }
-    
     const best = data.results[0];
     const loc = best.geometry && best.geometry.location;
-    
-    if (!loc || typeof loc.lat !== 'number' || typeof loc.lng !== 'number') {
+    const lat = loc && typeof loc.lat === 'number' ? loc.lat : NaN;
+    const lng = loc && typeof loc.lng === 'number' ? loc.lng : NaN;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
       return null;
     }
-    
-    return { 
-      latitude: loc.lat, 
-      longitude: loc.lng, 
-      formattedAddress: best.formatted_address 
-    };
+    const formatted = best.formatted_address || address.trim();
+    return { latitude: lat, longitude: lng, formattedAddress: formatted };
   } catch (error) {
     console.error('Forward geocoding error:', error);
     return null;
