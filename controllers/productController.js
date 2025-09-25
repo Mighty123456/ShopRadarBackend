@@ -33,11 +33,21 @@ exports.searchProductsPublic = async (req, res) => {
       filter.stock = { $gt: 0 };
     }
     if (q) {
-      const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const terms = escaped
+        .split(/\s+/)
+        .filter(Boolean)
+        .map(t => t.trim());
+      // Use lookahead pattern to ensure all terms appear in any order
+      // Example: (?=.*sony)(?=.*headphone).*  (case-insensitive)
+      const lookahead = terms.length
+        ? new RegExp(terms.map(t => `(?=.*${t})`).join('') + '.*', 'i')
+        : new RegExp(escaped, 'i');
+
       filter.$or = [
-        { name: regex },
-        { description: regex },
-        { category: regex }
+        { name: lookahead },
+        { description: lookahead },
+        { category: lookahead }
       ];
     }
 
@@ -50,7 +60,7 @@ exports.searchProductsPublic = async (req, res) => {
       Product.find(filter)
         .select('name description category price images status createdAt shopId')
         // include shop fields needed by mobile (location, address, rating, phone, live)
-        .populate('shopId', 'shopName address phone location rating isLive')
+        .populate('shopId', 'shopName address phone location rating isLive isActive verificationStatus')
         .sort(sortOption)
         .skip(skip)
         .limit(limit),
@@ -77,7 +87,9 @@ exports.searchProductsPublic = async (req, res) => {
 
     res.json({
       success: true,
-      data: items.map(p => ({
+      data: items
+        .filter(p => p.shopId && p.shopId.isActive && p.shopId.isLive && p.shopId.verificationStatus === 'approved')
+        .map(p => ({
         id: p._id,
         name: p.name,
         description: p.description,
