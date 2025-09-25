@@ -49,12 +49,31 @@ exports.searchProductsPublic = async (req, res) => {
     const [items, total] = await Promise.all([
       Product.find(filter)
         .select('name description category price images status createdAt shopId')
-        .populate('shopId', 'shopName')
+        // include shop fields needed by mobile (location, address, rating, phone, live)
+        .populate('shopId', 'shopName address phone location rating isLive')
         .sort(sortOption)
         .skip(skip)
         .limit(limit),
       Product.countDocuments(filter)
     ]);
+
+    // Fetch best active offer per product (percentage normalized 0-100)
+    const productIdToBestDiscount = {};
+    try {
+      const productIds = items.map(p => p._id);
+      const activeOffers = await Offer.find({
+        productId: { $in: productIds },
+        status: 'active'
+      }).select('productId discountType discountValue');
+      for (const offer of activeOffers) {
+        const value = offer.discountType === 'percent' ? Number(offer.discountValue) : 0; // only percent for ranking here
+        const pid = offer.productId?.toString();
+        if (!pid) continue;
+        if (productIdToBestDiscount[pid] == null || value > productIdToBestDiscount[pid]) {
+          productIdToBestDiscount[pid] = value;
+        }
+      }
+    } catch (_) {}
 
     res.json({
       success: true,
@@ -65,7 +84,16 @@ exports.searchProductsPublic = async (req, res) => {
         category: p.category,
         price: p.price,
         image: Array.isArray(p.images) && p.images.length ? p.images[0].url : undefined,
-        shop: p.shopId ? { id: p.shopId._id, name: p.shopId.shopName } : null,
+        shop: p.shopId ? {
+          id: p.shopId._id,
+          name: p.shopId.shopName,
+          address: p.shopId.address,
+          phone: p.shopId.phone,
+          location: p.shopId.location,
+          rating: p.shopId.rating,
+          isLive: p.shopId.isLive
+        } : null,
+        bestOfferPercent: productIdToBestDiscount[p._id.toString()] || 0,
         createdAt: p.createdAt
       })),
       pagination: {
