@@ -223,6 +223,9 @@ exports.getShopsNearLocation = async (req, res) => {
       return res.status(400).json({ message: 'Latitude and longitude are required' });
     }
     
+    const userLat = parseFloat(latitude);
+    const userLon = parseFloat(longitude);
+    
     const shops = await Shop.find({
       verificationStatus: 'approved',
       isActive: true,
@@ -231,16 +234,51 @@ exports.getShopsNearLocation = async (req, res) => {
         $near: {
           $geometry: {
             type: 'Point',
-            coordinates: [parseFloat(longitude), parseFloat(latitude)]
+            coordinates: [userLon, userLat]
           },
           $maxDistance: parseInt(radius)
         }
       }
     })
     .populate('ownerId', 'fullName')
-    .select('shopName address phone location verificationStatus');
+    .select('shopName address phone location verificationStatus rating reviewCount openingHours category description amenities');
     
-    res.json({ shops });
+    // Calculate distance for each shop and add it to the response
+    const shopsWithDistance = shops.map(shop => {
+      const shopLocation = shop.location.coordinates;
+      const shopLat = shopLocation[1];
+      const shopLon = shopLocation[0];
+      
+      // Calculate distance in meters using haversine formula
+      const distanceMeters = haversineMeters(userLat, userLon, shopLat, shopLon);
+      const distanceKm = distanceMeters / 1000;
+      
+      return {
+        _id: shop._id,
+        id: shop._id,
+        shopName: shop.shopName,
+        name: shop.shopName,
+        address: shop.address,
+        phone: shop.phone,
+        latitude: shopLat,
+        longitude: shopLon,
+        location: shop.location,
+        rating: shop.rating || 0,
+        reviewCount: shop.reviewCount || 0,
+        distance: distanceKm,
+        distanceKm: distanceKm,
+        openingHours: shop.openingHours || '',
+        category: shop.category || 'Other',
+        description: shop.description || '',
+        amenities: shop.amenities || [],
+        isLive: true,
+        isOpen: true, // Assuming all returned shops are open since we filter by isLive
+        verificationStatus: shop.verificationStatus,
+        owner: shop.ownerId
+      };
+    });
+    
+    res.json({ shops: shopsWithDistance });
   } catch (err) {
     console.error('Get shops near location error:', err);
     res.status(500).json({ message: 'Server error' });
