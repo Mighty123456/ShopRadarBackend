@@ -26,6 +26,26 @@ const offerSchema = new mongoose.Schema({
     trim: true
   },
   
+  // Offer category for filtering
+  category: {
+    type: String,
+    enum: [
+      'Food & Dining',
+      'Electronics & Gadgets', 
+      'Fashion & Clothing',
+      'Health & Beauty',
+      'Home & Garden',
+      'Sports & Fitness',
+      'Books & Education',
+      'Automotive',
+      'Entertainment',
+      'Services',
+      'Other'
+    ],
+    required: true,
+    default: 'Other'
+  },
+  
   // Discount details
   discountType: {
     type: String,
@@ -93,7 +113,9 @@ offerSchema.pre('save', function(next) {
 offerSchema.index({ shopId: 1 });
 offerSchema.index({ productId: 1 });
 offerSchema.index({ status: 1 });
+offerSchema.index({ category: 1 });
 offerSchema.index({ startDate: 1, endDate: 1 });
+offerSchema.index({ discountValue: 1 });
 
 // Virtual for checking if offer is currently valid
 offerSchema.virtual('isValid').get(function() {

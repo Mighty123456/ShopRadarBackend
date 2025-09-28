@@ -9,6 +9,7 @@ const adminAuthMiddleware = require('../middleware/adminAuthMiddleware');
 // Public routes (no authentication required)
 router.get('/featured', offerController.getFeaturedOffers);
 router.get('/shop/:shopId', offerController.getShopOffers);
+router.get('/filtered', offerController.getFilteredOffers);
 
 // Admin routes (require admin authentication) - must come BEFORE shop routes
 router.get('/admin/all', adminAuthMiddleware, offerController.getAllOffers);
