@@ -74,6 +74,39 @@ reviewSchema.pre('save', function(next) {
   next();
 });
 
+// Post-save middleware to update shop rating
+reviewSchema.post('save', async function(doc) {
+  try {
+    if (doc.status === 'active') {
+      await updateShopRating(doc.shopId);
+    }
+  } catch (error) {
+    console.error('Error updating shop rating after review save:', error);
+  }
+});
+
+// Post-remove middleware to update shop rating
+reviewSchema.post('findOneAndDelete', async function(doc) {
+  try {
+    if (doc && doc.status === 'active') {
+      await updateShopRating(doc.shopId);
+    }
+  } catch (error) {
+    console.error('Error updating shop rating after review delete:', error);
+  }
+});
+
+// Post-update middleware to update shop rating
+reviewSchema.post('findOneAndUpdate', async function(doc) {
+  try {
+    if (doc && doc.status === 'active') {
+      await updateShopRating(doc.shopId);
+    }
+  } catch (error) {
+    console.error('Error updating shop rating after review update:', error);
+  }
+});
+
 // Index for efficient querying
 reviewSchema.index({ userId: 1 });
 reviewSchema.index({ shopId: 1 });
@@ -82,5 +115,38 @@ reviewSchema.index({ createdAt: -1 });
 
 // Ensure one review per user per shop
 reviewSchema.index({ userId: 1, shopId: 1 }, { unique: true });
+
+// Helper function to update shop rating
+async function updateShopRating(shopId) {
+  try {
+    const Shop = require('./shopModel');
+    const Review = mongoose.model('Review', reviewSchema);
+    
+    // Calculate average rating and count for the shop
+    const ratingStats = await Review.aggregate([
+      { $match: { shopId: shopId, status: 'active' } },
+      {
+        $group: {
+          _id: null,
+          averageRating: { $avg: '$rating' },
+          reviewCount: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const averageRating = ratingStats.length > 0 ? ratingStats[0].averageRating : 0;
+    const reviewCount = ratingStats.length > 0 ? ratingStats[0].reviewCount : 0;
+
+    // Update shop with new rating and review count
+    await Shop.findByIdAndUpdate(shopId, {
+      rating: Math.round(averageRating * 10) / 10, // Round to 1 decimal place
+      reviewCount: reviewCount
+    });
+
+    console.log(`Updated shop ${shopId} rating: ${averageRating}, count: ${reviewCount}`);
+  } catch (error) {
+    console.error('Error updating shop rating:', error);
+  }
+}
 
 module.exports = mongoose.model('Review', reviewSchema);

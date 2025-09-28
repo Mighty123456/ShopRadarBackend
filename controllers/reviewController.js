@@ -248,3 +248,334 @@ exports.getReviewStats = async (req, res) => {
     });
   }
 };
+
+// Create a new review
+exports.createReview = async (req, res) => {
+  try {
+    const { shopId, rating, comment } = req.body;
+    const userId = req.user.id;
+
+    // Validate required fields
+    if (!shopId || !rating || !comment) {
+      return res.status(400).json({
+        success: false,
+        message: 'Shop ID, rating, and comment are required'
+      });
+    }
+
+    // Validate rating range
+    if (rating < 1 || rating > 5) {
+      return res.status(400).json({
+        success: false,
+        message: 'Rating must be between 1 and 5'
+      });
+    }
+
+    // Check if shop exists
+    const shop = await Shop.findById(shopId);
+    if (!shop) {
+      return res.status(404).json({
+        success: false,
+        message: 'Shop not found'
+      });
+    }
+
+    // Check if user has already reviewed this shop
+    const existingReview = await Review.findOne({ userId, shopId });
+    if (existingReview) {
+      return res.status(400).json({
+        success: false,
+        message: 'You have already reviewed this shop'
+      });
+    }
+
+    // Create new review
+    const review = new Review({
+      userId,
+      shopId,
+      rating,
+      comment: comment.trim()
+    });
+
+    await review.save();
+
+    // Update shop rating and review count
+    await updateShopRating(shopId);
+
+    // Log the activity
+    await logActivity({
+      type: 'review_created',
+      description: `New review created for shop ${shop.shopName}`,
+      userId: userId,
+      shopId: shopId,
+      metadata: {
+        reviewId: review._id,
+        rating: rating,
+        shopName: shop.shopName
+      },
+      severity: 'low',
+      status: 'success',
+      ipAddress: req.ip || req.connection.remoteAddress,
+      userAgent: req.get('User-Agent')
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Review created successfully',
+      data: {
+        review: {
+          id: review._id,
+          rating: review.rating,
+          comment: review.comment,
+          status: review.status,
+          createdAt: review.createdAt
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Create review error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create review'
+    });
+  }
+};
+
+// Update an existing review
+exports.updateReview = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { rating, comment } = req.body;
+    const userId = req.user.id;
+
+    // Validate rating if provided
+    if (rating && (rating < 1 || rating > 5)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Rating must be between 1 and 5'
+      });
+    }
+
+    // Find the review
+    const review = await Review.findById(id).populate('shopId', 'shopName');
+    if (!review) {
+      return res.status(404).json({
+        success: false,
+        message: 'Review not found'
+      });
+    }
+
+    // Check if user owns this review
+    if (review.userId.toString() !== userId) {
+      return res.status(403).json({
+        success: false,
+        message: 'You can only update your own reviews'
+      });
+    }
+
+    // Update review fields
+    if (rating !== undefined) review.rating = rating;
+    if (comment !== undefined) review.comment = comment.trim();
+
+    await review.save();
+
+    // Update shop rating
+    await updateShopRating(review.shopId);
+
+    // Log the activity
+    await logActivity({
+      type: 'review_updated',
+      description: `Review updated for shop ${review.shopId.shopName}`,
+      userId: userId,
+      shopId: review.shopId._id,
+      metadata: {
+        reviewId: review._id,
+        rating: review.rating,
+        shopName: review.shopId.shopName
+      },
+      severity: 'low',
+      status: 'success',
+      ipAddress: req.ip || req.connection.remoteAddress,
+      userAgent: req.get('User-Agent')
+    });
+
+    res.json({
+      success: true,
+      message: 'Review updated successfully',
+      data: {
+        review: {
+          id: review._id,
+          rating: review.rating,
+          comment: review.comment,
+          status: review.status,
+          updatedAt: review.updatedAt
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Update review error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update review'
+    });
+  }
+};
+
+// Delete a review
+exports.deleteReview = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+
+    // Find the review
+    const review = await Review.findById(id).populate('shopId', 'shopName');
+    if (!review) {
+      return res.status(404).json({
+        success: false,
+        message: 'Review not found'
+      });
+    }
+
+    // Check if user owns this review
+    if (review.userId.toString() !== userId) {
+      return res.status(403).json({
+        success: false,
+        message: 'You can only delete your own reviews'
+      });
+    }
+
+    const shopId = review.shopId._id;
+    const shopName = review.shopId.shopName;
+
+    // Delete the review
+    await Review.findByIdAndDelete(id);
+
+    // Update shop rating
+    await updateShopRating(shopId);
+
+    // Log the activity
+    await logActivity({
+      type: 'review_deleted',
+      description: `Review deleted for shop ${shopName}`,
+      userId: userId,
+      shopId: shopId,
+      metadata: {
+        reviewId: id,
+        shopName: shopName
+      },
+      severity: 'low',
+      status: 'success',
+      ipAddress: req.ip || req.connection.remoteAddress,
+      userAgent: req.get('User-Agent')
+    });
+
+    res.json({
+      success: true,
+      message: 'Review deleted successfully'
+    });
+
+  } catch (error) {
+    console.error('Delete review error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete review'
+    });
+  }
+};
+
+// Get reviews for a specific shop
+exports.getShopReviews = async (req, res) => {
+  try {
+    const { shopId } = req.params;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    // Check if shop exists
+    const shop = await Shop.findById(shopId);
+    if (!shop) {
+      return res.status(404).json({
+        success: false,
+        message: 'Shop not found'
+      });
+    }
+
+    // Get reviews for the shop
+    const reviews = await Review.find({ shopId, status: 'active' })
+      .populate('userId', 'fullName name email')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    const total = await Review.countDocuments({ shopId, status: 'active' });
+
+    // Transform reviews
+    const transformedReviews = reviews.map(review => ({
+      id: review._id,
+      user: review.userId ? (review.userId.fullName || review.userId.name || 'Anonymous') : 'Anonymous',
+      rating: review.rating,
+      comment: review.comment,
+      date: review.createdAt.toISOString().split('T')[0],
+      createdAt: review.createdAt
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        reviews: transformedReviews,
+        pagination: {
+          currentPage: page,
+          totalPages: Math.ceil(total / limit),
+          totalReviews: total,
+          hasNext: page < Math.ceil(total / limit),
+          hasPrev: page > 1
+        },
+        shop: {
+          id: shop._id,
+          name: shop.shopName,
+          rating: shop.rating,
+          reviewCount: shop.reviewCount
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Get shop reviews error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch shop reviews'
+    });
+  }
+};
+
+// Helper function to update shop rating
+async function updateShopRating(shopId) {
+  try {
+    // Calculate average rating and count for the shop
+    const ratingStats = await Review.aggregate([
+      { $match: { shopId: shopId, status: 'active' } },
+      {
+        $group: {
+          _id: null,
+          averageRating: { $avg: '$rating' },
+          reviewCount: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const averageRating = ratingStats.length > 0 ? ratingStats[0].averageRating : 0;
+    const reviewCount = ratingStats.length > 0 ? ratingStats[0].reviewCount : 0;
+
+    // Update shop with new rating and review count
+    await Shop.findByIdAndUpdate(shopId, {
+      rating: Math.round(averageRating * 10) / 10, // Round to 1 decimal place
+      reviewCount: reviewCount
+    });
+
+    console.log(`Updated shop ${shopId} rating: ${averageRating}, count: ${reviewCount}`);
+  } catch (error) {
+    console.error('Error updating shop rating:', error);
+  }
+}

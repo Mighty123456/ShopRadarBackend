@@ -76,7 +76,15 @@ exports.searchProductsPublic = async (req, res) => {
         status: 'active'
       }).select('productId discountType discountValue');
       for (const offer of activeOffers) {
-        const value = offer.discountType === 'percent' ? Number(offer.discountValue) : 0; // only percent for ranking here
+        let value = 0;
+        if (offer.discountType === 'Percentage') {
+          value = Number(offer.discountValue);
+        } else if (offer.discountType === 'Fixed Amount') {
+          // For fixed amount, we need the product price to calculate percentage
+          // This is a simplified approach - in production you might want to fetch product prices
+          value = 0; // We'll handle this differently if needed
+        }
+        
         const pid = offer.productId?.toString();
         if (!pid) continue;
         if (productIdToBestDiscount[pid] == null || value > productIdToBestDiscount[pid]) {
