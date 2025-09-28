@@ -53,7 +53,7 @@ exports.getMyOffers = async (req, res) => {
 // Create a new offer
 exports.createOffer = async (req, res) => {
   try {
-    const { productId, title, description, discountType, discountValue, startDate, endDate, maxUses } = req.body;
+    const { productId, title, description, category, discountType, discountValue, startDate, endDate, maxUses } = req.body;
 
     // Validate required fields
     if (!productId || !title || !discountType || !discountValue || !startDate || !endDate) {
@@ -87,6 +87,7 @@ exports.createOffer = async (req, res) => {
       productId: productId,
       title,
       description: description || '',
+      category: category || 'Other',
       discountType,
       discountValue,
       startDate: new Date(startDate),
@@ -791,6 +792,108 @@ exports.updateOfferStatus = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to update offer status'
+    });
+  }
+};
+
+// Get offers with advanced filtering
+exports.getFilteredOffers = async (req, res) => {
+  try {
+    const {
+      category,
+      minDiscount,
+      maxDiscount,
+      expiringHours,
+      searchQuery,
+      sortBy = 'discount',
+      page = 1,
+      limit = 20
+    } = req.query;
+
+    const skip = (page - 1) * limit;
+    const now = new Date();
+
+    // Build filter object
+    const filter = {
+      status: 'active',
+      startDate: { $lte: now },
+      endDate: { $gte: now }
+    };
+
+    // Add category filter
+    if (category && category !== 'All') {
+      filter.category = category;
+    }
+
+    // Add discount range filter
+    if (minDiscount || maxDiscount) {
+      filter.discountValue = {};
+      if (minDiscount) filter.discountValue.$gte = parseFloat(minDiscount);
+      if (maxDiscount) filter.discountValue.$lte = parseFloat(maxDiscount);
+    }
+
+    // Add expiring soon filter
+    if (expiringHours) {
+      const expiryTime = new Date(now.getTime() + (parseInt(expiringHours) * 60 * 60 * 1000));
+      filter.endDate.$lte = expiryTime;
+    }
+
+    // Add search query filter
+    if (searchQuery) {
+      filter.$or = [
+        { title: { $regex: searchQuery, $options: 'i' } },
+        { description: { $regex: searchQuery, $options: 'i' } }
+      ];
+    }
+
+    // Build sort object
+    let sort = {};
+    switch (sortBy) {
+      case 'discount':
+        sort = { discountValue: -1 };
+        break;
+      case 'expiring':
+        sort = { endDate: 1 };
+        break;
+      case 'newest':
+        sort = { createdAt: -1 };
+        break;
+      case 'alphabetical':
+        sort = { title: 1 };
+        break;
+      default:
+        sort = { discountValue: -1 };
+    }
+
+    // Execute query
+    const offers = await Offer.find(filter)
+      .populate('productId', 'name category price images')
+      .populate('shopId', 'name address location')
+      .sort(sort)
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const totalOffers = await Offer.countDocuments(filter);
+
+    res.json({
+      success: true,
+      data: {
+        offers,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: Math.ceil(totalOffers / limit),
+          totalOffers,
+          hasNextPage: page < Math.ceil(totalOffers / limit),
+          hasPrevPage: page > 1
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Get filtered offers error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch filtered offers'
     });
   }
 };
