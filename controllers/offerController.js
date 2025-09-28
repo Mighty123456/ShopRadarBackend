@@ -100,6 +100,30 @@ exports.createOffer = async (req, res) => {
 
     // Populate product details for response
     await newOffer.populate('productId', 'name category price images');
+    await newOffer.populate('shopId', 'shopName address phone location rating isLive');
+
+    // Broadcast new offer to all connected clients
+    websocketService.broadcastNewOffer({
+      id: newOffer._id,
+      title: newOffer.title,
+      description: newOffer.description,
+      discountType: newOffer.discountType,
+      discountValue: newOffer.discountValue,
+      startDate: newOffer.startDate,
+      endDate: newOffer.endDate,
+      shop: {
+        id: newOffer.shopId._id,
+        name: newOffer.shopId.shopName,
+        address: newOffer.shopId.address,
+        rating: newOffer.shopId.rating || 0
+      },
+      product: {
+        id: newOffer.productId._id,
+        name: newOffer.productId.name,
+        category: newOffer.productId.category,
+        price: newOffer.productId.price
+      }
+    });
 
     // Log the activity
     await logActivity({
@@ -451,6 +475,179 @@ exports.getAllOffers = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch offers'
+    });
+  }
+};
+
+// Get featured offers (public endpoint)
+exports.getFeaturedOffers = async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 10;
+    const { latitude, longitude, radius = 10000 } = req.query; // radius in meters
+
+    // Build filter for active offers
+    const filter = {
+      status: 'active',
+      startDate: { $lte: new Date() },
+      endDate: { $gte: new Date() }
+    };
+
+    // Add location filter if coordinates provided
+    if (latitude && longitude) {
+      const shops = await Shop.find({
+        verificationStatus: 'approved',
+        isActive: true,
+        isLive: true,
+        location: {
+          $near: {
+            $geometry: { type: 'Point', coordinates: [parseFloat(longitude), parseFloat(latitude)] },
+            $maxDistance: parseInt(radius)
+          }
+        }
+      }).select('_id');
+      
+      const shopIds = shops.map(shop => shop._id);
+      filter.shopId = { $in: shopIds };
+    }
+
+    // Get featured offers with shop and product details
+    const offers = await Offer.find(filter)
+      .populate('shopId', 'shopName address phone location rating isLive')
+      .populate('productId', 'name category price images')
+      .sort({ createdAt: -1 })
+      .limit(limit);
+
+    // Transform offers for frontend
+    const transformedOffers = offers.map(offer => ({
+      id: offer._id,
+      title: offer.title,
+      description: offer.description,
+      discountType: offer.discountType,
+      discountValue: offer.discountValue,
+      startDate: offer.startDate,
+      endDate: offer.endDate,
+      maxUses: offer.maxUses,
+      currentUses: offer.currentUses,
+      status: offer.status,
+      shop: {
+        id: offer.shopId._id,
+        name: offer.shopId.shopName,
+        address: offer.shopId.address,
+        phone: offer.shopId.phone,
+        rating: offer.shopId.rating || 0,
+        isLive: offer.shopId.isLive
+      },
+      product: {
+        id: offer.productId._id,
+        name: offer.productId.name,
+        category: offer.productId.category,
+        price: offer.productId.price,
+        images: offer.productId.images || []
+      },
+      createdAt: offer.createdAt,
+      updatedAt: offer.updatedAt
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        offers: transformedOffers,
+        total: transformedOffers.length,
+        timestamp: new Date().toISOString()
+      }
+    });
+
+  } catch (error) {
+    console.error('Get featured offers error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch featured offers'
+    });
+  }
+};
+
+// Get offers for a specific shop (public endpoint)
+exports.getShopOffers = async (req, res) => {
+  try {
+    const { shopId } = req.params;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    // Verify shop exists and is active
+    const shop = await Shop.findOne({ 
+      _id: shopId, 
+      verificationStatus: 'approved',
+      isActive: true,
+      isLive: true 
+    });
+
+    if (!shop) {
+      return res.status(404).json({
+        success: false,
+        message: 'Shop not found or not available'
+      });
+    }
+
+    // Build filter for active offers
+    const filter = {
+      shopId: shopId,
+      status: 'active',
+      startDate: { $lte: new Date() },
+      endDate: { $gte: new Date() }
+    };
+
+    // Get offers with pagination
+    const offers = await Offer.find(filter)
+      .populate('productId', 'name category price images')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    const totalOffers = await Offer.countDocuments(filter);
+
+    // Transform offers for frontend
+    const transformedOffers = offers.map(offer => ({
+      id: offer._id,
+      title: offer.title,
+      description: offer.description,
+      discountType: offer.discountType,
+      discountValue: offer.discountValue,
+      startDate: offer.startDate,
+      endDate: offer.endDate,
+      maxUses: offer.maxUses,
+      currentUses: offer.currentUses,
+      status: offer.status,
+      product: {
+        id: offer.productId._id,
+        name: offer.productId.name,
+        category: offer.productId.category,
+        price: offer.productId.price,
+        images: offer.productId.images || []
+      },
+      createdAt: offer.createdAt,
+      updatedAt: offer.updatedAt
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        offers: transformedOffers,
+        pagination: {
+          currentPage: page,
+          totalPages: Math.ceil(totalOffers / limit),
+          totalOffers,
+          hasNextPage: page < Math.ceil(totalOffers / limit),
+          hasPrevPage: page > 1
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Get shop offers error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch shop offers'
     });
   }
 };

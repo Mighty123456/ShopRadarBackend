@@ -6,6 +6,10 @@ const shopOwnershipMiddleware = require('../middleware/shopOwnershipMiddleware')
 const requireApprovedShop = require('../middleware/requireApprovedShop');
 const adminAuthMiddleware = require('../middleware/adminAuthMiddleware');
 
+// Public routes (no authentication required)
+router.get('/featured', offerController.getFeaturedOffers);
+router.get('/shop/:shopId', offerController.getShopOffers);
+
 // Admin routes (require admin authentication) - must come BEFORE shop routes
 router.get('/admin/all', adminAuthMiddleware, offerController.getAllOffers);
 router.get('/admin/stats', adminAuthMiddleware, offerController.getOfferStats);

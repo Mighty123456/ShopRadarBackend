@@ -138,6 +138,19 @@ const shopSchema = new mongoose.Schema({
     default: false 
   },
   
+  // Rating and review fields
+  rating: { 
+    type: Number, 
+    default: 0,
+    min: 0,
+    max: 5
+  },
+  reviewCount: { 
+    type: Number, 
+    default: 0,
+    min: 0
+  },
+  
   // Timestamps
   createdAt: { 
     type: Date, 

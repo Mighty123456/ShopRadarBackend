@@ -160,6 +160,57 @@ class WebSocketService {
     this.io.to('admin_room').emit('notification', notification);
   }
 
+  // Broadcast featured offers update to all connected clients
+  broadcastFeaturedOffersUpdate(offers) {
+    if (!this.io) return;
+
+    const offersData = {
+      type: 'featured_offers_update',
+      data: {
+        offers: offers,
+        timestamp: new Date().toISOString()
+      }
+    };
+
+    // Broadcast to all connected clients (public)
+    this.io.emit('featured_offers_update', offersData);
+    console.log(`Broadcasted featured offers update: ${offers.length} offers`);
+  }
+
+  // Broadcast new offer to all connected clients
+  broadcastNewOffer(offer) {
+    if (!this.io) return;
+
+    const offerData = {
+      type: 'new_offer',
+      data: {
+        offer: offer,
+        timestamp: new Date().toISOString()
+      }
+    };
+
+    // Broadcast to all connected clients (public)
+    this.io.emit('new_offer', offerData);
+    console.log(`Broadcasted new offer: ${offer.title}`);
+  }
+
+  // Broadcast offer update to all connected clients
+  broadcastOfferUpdate(offer) {
+    if (!this.io) return;
+
+    const offerData = {
+      type: 'offer_update',
+      data: {
+        offer: offer,
+        timestamp: new Date().toISOString()
+      }
+    };
+
+    // Broadcast to all connected clients (public)
+    this.io.emit('offer_update', offerData);
+    console.log(`Broadcasted offer update: ${offer.title}`);
+  }
+
   // Get activity-specific room name
   getActivityRoom(activityType) {
     const roomMap = {
