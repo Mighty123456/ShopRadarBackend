@@ -97,15 +97,22 @@ const offerSchema = new mongoose.Schema({
   }
 });
 
-// Update the updatedAt field before saving
+// Update timestamps and enforce status transitions before saving
 offerSchema.pre('save', function(next) {
   this.updatedAt = Date.now();
-  
-  // Check if offer is expired
-  if (this.endDate < new Date()) {
+
+  const now = new Date();
+
+  // Enforce expired if past endDate
+  if (this.endDate < now) {
     this.status = 'expired';
+  } else {
+    // If startDate is in the future, don't allow 'active'
+    if (this.startDate > now && this.status === 'active') {
+      this.status = 'inactive';
+    }
   }
-  
+
   next();
 });
 

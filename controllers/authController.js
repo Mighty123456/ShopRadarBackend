@@ -1,7 +1,6 @@
 const User = require('../models/userModel');
 const Shop = require('../models/shopModel');
 const authService = require('../services/authService');
-const config = require('../config/config');
 const emailService = require('../services/emailService');
 const { verifyGoogleIdToken } = require('../services/googleAuthService');
 
@@ -125,38 +124,18 @@ exports.register = async (req, res) => {
       await user.save();
     }
 
-    // Send OTP email without risking request timeout. Proceed even if email send fails or times out.
-    console.log(`Registration OTP send: emailConfigured=${emailService.emailConfigured === true}`);
-    let emailSent = false;
-    try {
-      const sendPromise = emailService.sendOTP(email, otp);
-      const raced = await Promise.race([
-        sendPromise.then(Boolean).catch((err) => {
-          console.error('OTP send error (register):', err && err.message ? err.message : err);
-          return false;
-        }),
-        new Promise(resolve => setTimeout(() => resolve('timeout'), 15000))
-      ]);
-      emailSent = raced === true;
-    } catch (err) {
-      console.error('Unexpected error starting OTP send (register):', err && err.message ? err.message : err);
-      emailSent = false;
-    }
+    // Send OTP email synchronously and require success
+    const emailSent = await emailService.sendOTP(email, otp);
     if (!emailSent) {
-      console.warn(`OTP email send failed or timed out for ${email}. User can use resend OTP.`);
+      return res.status(500).json({ message: 'Failed to send verification email' });
     }
 
-    const responseBody = {
+    res.status(201).json({ 
       message: 'Registration successful. Please check your email for verification code.',
       userId: user._id,
       needsVerification: true,
       shopId: shop ? shop._id : null
-    };
-    if (!emailSent && config.nodeEnv !== 'production') {
-      responseBody.debugOtp = otp;
-      responseBody.emailConfigured = emailService.emailConfigured === true;
-    }
-    res.status(201).json(responseBody);
+    });
   } catch (err) {
     console.error('Registration error:', err);
     res.status(500).json({ message: 'Server error' });
@@ -252,13 +231,6 @@ exports.resendOTP = async (req, res) => {
 
     const emailSent = await emailService.sendOTP(email, otp);
     if (!emailSent) {
-      if (config.nodeEnv !== 'production') {
-        return res.status(200).json({ 
-          message: 'OTP resent (email send failed in dev). Use debugOtp to verify.',
-          debugOtp: otp,
-          emailConfigured: emailService.emailConfigured === true
-        });
-      }
       return res.status(500).json({ message: 'Failed to send verification email' });
     }
 
