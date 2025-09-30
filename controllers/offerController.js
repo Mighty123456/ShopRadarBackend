@@ -85,12 +85,8 @@ exports.createOffer = async (req, res) => {
     const now = new Date();
     const parsedStart = new Date(startDate);
     const parsedEnd = new Date(endDate);
-    let derivedStatus = 'active';
-    if (parsedEnd < now) {
-      derivedStatus = 'expired';
-    } else if (parsedStart > now) {
-      derivedStatus = 'inactive';
-    }
+    // Default to active (previous behavior), only mark expired if endDate already passed
+    let derivedStatus = parsedEnd < now ? 'expired' : 'active';
 
     const offerData = {
       shopId: shop._id,

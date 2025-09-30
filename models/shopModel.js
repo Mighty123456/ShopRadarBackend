@@ -180,4 +180,9 @@ shopSchema.virtual('formattedAddress').get(function() {
 // Ensure virtual fields are serialized
 shopSchema.set('toJSON', { virtuals: true });
 
+// Backward compatibility: expose `name` as alias of `shopName`
+shopSchema.virtual('name').get(function() {
+  return this.shopName;
+});
+
 module.exports = mongoose.model('Shop', shopSchema);
