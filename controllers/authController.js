@@ -124,13 +124,20 @@ exports.register = async (req, res) => {
       await user.save();
     }
 
-    const emailSent = await emailService.sendOTP(email, otp);
+    // Send OTP email without risking request timeout. Proceed even if email send fails or times out.
+    let emailSent = false;
+    try {
+      const sendPromise = emailService.sendOTP(email, otp);
+      const raced = await Promise.race([
+        sendPromise.then(Boolean).catch(() => false),
+        new Promise(resolve => setTimeout(() => resolve('timeout'), 5000))
+      ]);
+      emailSent = raced === true;
+    } catch (_) {
+      emailSent = false;
+    }
     if (!emailSent) {
-      await User.findByIdAndDelete(user._id);
-      if (shop) {
-        await Shop.findByIdAndDelete(shop._id);
-      }
-      return res.status(500).json({ message: 'Failed to send verification email' });
+      console.warn(`OTP email send failed or timed out for ${email}. User can use resend OTP.`);
     }
 
     res.status(201).json({ 
