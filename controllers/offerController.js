@@ -81,7 +81,17 @@ exports.createOffer = async (req, res) => {
       });
     }
 
-    // Create offer
+    // Create offer with status derived from dates
+    const now = new Date();
+    const parsedStart = new Date(startDate);
+    const parsedEnd = new Date(endDate);
+    let derivedStatus = 'active';
+    if (parsedEnd < now) {
+      derivedStatus = 'expired';
+    } else if (parsedStart > now) {
+      derivedStatus = 'inactive';
+    }
+
     const offerData = {
       shopId: shop._id,
       productId: productId,
@@ -90,10 +100,10 @@ exports.createOffer = async (req, res) => {
       category: category || 'Other',
       discountType,
       discountValue,
-      startDate: new Date(startDate),
-      endDate: new Date(endDate),
+      startDate: parsedStart,
+      endDate: parsedEnd,
       maxUses: maxUses || 0,
-      status: 'active'
+      status: derivedStatus
     };
 
     const newOffer = new Offer(offerData);
