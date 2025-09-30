@@ -67,13 +67,16 @@ exports.searchProductsPublic = async (req, res) => {
       Product.countDocuments(filter)
     ]);
 
-    // Fetch best active offer per product (percentage normalized 0-100)
+    // Fetch best active and currently valid offer per product (percentage normalized 0-100)
     const productIdToBestDiscount = {};
     try {
       const productIds = items.map(p => p._id);
+      const now = new Date();
       const activeOffers = await Offer.find({
         productId: { $in: productIds },
-        status: 'active'
+        status: 'active',
+        startDate: { $lte: now },
+        endDate: { $gte: now }
       }).select('productId discountType discountValue');
       for (const offer of activeOffers) {
         let value = 0;
