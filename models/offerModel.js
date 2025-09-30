@@ -106,11 +106,6 @@ offerSchema.pre('save', function(next) {
   // Enforce expired if past endDate
   if (this.endDate < now) {
     this.status = 'expired';
-  } else {
-    // If startDate is in the future, don't allow 'active'
-    if (this.startDate > now && this.status === 'active') {
-      this.status = 'inactive';
-    }
   }
 
   next();
