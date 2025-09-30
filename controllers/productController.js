@@ -71,6 +71,10 @@ exports.searchProductsPublic = async (req, res) => {
     const productIdToBestDiscount = {};
     try {
       const productIds = items.map(p => p._id);
+      const productIdToPrice = {};
+      for (const p of items) {
+        productIdToPrice[p._id.toString()] = Number(p.price) || 0;
+      }
       const now = new Date();
       const activeOffers = await Offer.find({
         productId: { $in: productIds },
@@ -83,9 +87,14 @@ exports.searchProductsPublic = async (req, res) => {
         if (offer.discountType === 'Percentage') {
           value = Number(offer.discountValue);
         } else if (offer.discountType === 'Fixed Amount') {
-          // For fixed amount, we need the product price to calculate percentage
-          // This is a simplified approach - in production you might want to fetch product prices
-          value = 0; // We'll handle this differently if needed
+          // Convert fixed amount to percentage of the product price
+          const pid = offer.productId?.toString();
+          const price = pid ? (productIdToPrice[pid] || 0) : 0;
+          if (price > 0) {
+            value = Math.max(0, Math.min(100, (Number(offer.discountValue) / price) * 100));
+          } else {
+            value = 0;
+          }
         }
         
         const pid = offer.productId?.toString();
