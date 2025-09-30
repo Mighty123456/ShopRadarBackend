@@ -125,15 +125,20 @@ exports.register = async (req, res) => {
     }
 
     // Send OTP email without risking request timeout. Proceed even if email send fails or times out.
+    console.log(`Registration OTP send: emailConfigured=${emailService.emailConfigured === true}`);
     let emailSent = false;
     try {
       const sendPromise = emailService.sendOTP(email, otp);
       const raced = await Promise.race([
-        sendPromise.then(Boolean).catch(() => false),
-        new Promise(resolve => setTimeout(() => resolve('timeout'), 5000))
+        sendPromise.then(Boolean).catch((err) => {
+          console.error('OTP send error (register):', err && err.message ? err.message : err);
+          return false;
+        }),
+        new Promise(resolve => setTimeout(() => resolve('timeout'), 15000))
       ]);
       emailSent = raced === true;
-    } catch (_) {
+    } catch (err) {
+      console.error('Unexpected error starting OTP send (register):', err && err.message ? err.message : err);
       emailSent = false;
     }
     if (!emailSent) {
