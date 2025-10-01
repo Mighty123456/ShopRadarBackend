@@ -420,6 +420,49 @@ exports.toggleOfferStatus = async (req, res) => {
 
 // Admin Methods
 
+// Clean up offers with null references (admin utility)
+exports.cleanupInvalidOffers = async (req, res) => {
+  try {
+    // Find offers with null shopId or productId
+    const invalidOffers = await Offer.find({
+      $or: [
+        { shopId: null },
+        { productId: null }
+      ]
+    });
+
+    console.log(`Found ${invalidOffers.length} offers with null references`);
+
+    // Optionally delete invalid offers (uncomment if you want to delete them)
+    // const deleteResult = await Offer.deleteMany({
+    //   $or: [
+    //     { shopId: null },
+    //     { productId: null }
+    //   ]
+    // });
+
+    res.json({
+      success: true,
+      message: `Found ${invalidOffers.length} offers with null references`,
+      data: {
+        invalidOffers: invalidOffers.map(offer => ({
+          id: offer._id,
+          title: offer.title,
+          shopId: offer.shopId,
+          productId: offer.productId,
+          createdAt: offer.createdAt
+        }))
+      }
+    });
+  } catch (error) {
+    console.error('Error cleaning up invalid offers:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to cleanup invalid offers'
+    });
+  }
+};
+
 // Get all offers (admin)
 exports.getAllOffers = async (req, res) => {
   try {
@@ -464,10 +507,13 @@ exports.getAllOffers = async (req, res) => {
 
     console.log('Total offers:', totalOffers);
 
+    // Filter out offers with null references for admin safety
+    const validOffers = offers.filter(offer => offer.shopId && offer.productId);
+
     res.json({
       success: true,
       data: {
-        offers,
+        offers: validOffers,
         pagination: {
           currentPage: page,
           totalPages,
@@ -524,36 +570,38 @@ exports.getFeaturedOffers = async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(limit);
 
-    // Transform offers for frontend
-    const transformedOffers = offers.map(offer => ({
-      id: offer._id,
-      title: offer.title,
-      description: offer.description,
-      discountType: offer.discountType,
-      discountValue: offer.discountValue,
-      startDate: offer.startDate,
-      endDate: offer.endDate,
-      maxUses: offer.maxUses,
-      currentUses: offer.currentUses,
-      status: offer.status,
-      shop: {
-        id: offer.shopId._id,
-        name: offer.shopId.shopName,
-        address: offer.shopId.address,
-        phone: offer.shopId.phone,
-        rating: offer.shopId.rating || 0,
-        isLive: offer.shopId.isLive
-      },
-      product: {
-        id: offer.productId._id,
-        name: offer.productId.name,
-        category: offer.productId.category,
-        price: offer.productId.price,
-        images: offer.productId.images || []
-      },
-      createdAt: offer.createdAt,
-      updatedAt: offer.updatedAt
-    }));
+    // Filter out offers with null shopId or productId and transform for frontend
+    const transformedOffers = offers
+      .filter(offer => offer.shopId && offer.productId) // Filter out offers with null references
+      .map(offer => ({
+        id: offer._id,
+        title: offer.title,
+        description: offer.description,
+        discountType: offer.discountType,
+        discountValue: offer.discountValue,
+        startDate: offer.startDate,
+        endDate: offer.endDate,
+        maxUses: offer.maxUses,
+        currentUses: offer.currentUses,
+        status: offer.status,
+        shop: {
+          id: offer.shopId._id,
+          name: offer.shopId.shopName,
+          address: offer.shopId.address,
+          phone: offer.shopId.phone,
+          rating: offer.shopId.rating || 0,
+          isLive: offer.shopId.isLive
+        },
+        product: {
+          id: offer.productId._id,
+          name: offer.productId.name,
+          category: offer.productId.category,
+          price: offer.productId.price,
+          images: offer.productId.images || []
+        },
+        createdAt: offer.createdAt,
+        updatedAt: offer.updatedAt
+      }));
 
     res.json({
       success: true,
@@ -613,28 +661,30 @@ exports.getShopOffers = async (req, res) => {
 
     const totalOffers = await Offer.countDocuments(filter);
 
-    // Transform offers for frontend
-    const transformedOffers = offers.map(offer => ({
-      id: offer._id,
-      title: offer.title,
-      description: offer.description,
-      discountType: offer.discountType,
-      discountValue: offer.discountValue,
-      startDate: offer.startDate,
-      endDate: offer.endDate,
-      maxUses: offer.maxUses,
-      currentUses: offer.currentUses,
-      status: offer.status,
-      product: {
-        id: offer.productId._id,
-        name: offer.productId.name,
-        category: offer.productId.category,
-        price: offer.productId.price,
-        images: offer.productId.images || []
-      },
-      createdAt: offer.createdAt,
-      updatedAt: offer.updatedAt
-    }));
+    // Filter out offers with null productId and transform for frontend
+    const transformedOffers = offers
+      .filter(offer => offer.productId) // Filter out offers with null productId
+      .map(offer => ({
+        id: offer._id,
+        title: offer.title,
+        description: offer.description,
+        discountType: offer.discountType,
+        discountValue: offer.discountValue,
+        startDate: offer.startDate,
+        endDate: offer.endDate,
+        maxUses: offer.maxUses,
+        currentUses: offer.currentUses,
+        status: offer.status,
+        product: {
+          id: offer.productId._id,
+          name: offer.productId.name,
+          category: offer.productId.category,
+          price: offer.productId.price,
+          images: offer.productId.images || []
+        },
+        createdAt: offer.createdAt,
+        updatedAt: offer.updatedAt
+      }));
 
     res.json({
       success: true,
