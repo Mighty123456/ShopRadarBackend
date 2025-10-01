@@ -8,6 +8,8 @@ class EmailService {
     const host = process.env.EMAIL_HOST; // e.g., smtp.mailtrap.io, smtp.gmail.com, smtp.sendgrid.net
     const port = process.env.EMAIL_PORT ? Number(process.env.EMAIL_PORT) : undefined; // e.g., 2525, 587, 465
     const secure = process.env.EMAIL_SECURE === 'true'; // true for 465, false for 587/2525
+    this.fromEmail = process.env.EMAIL_FROM || process.env.EMAIL_USER || 'no-reply@shopradar.app';
+    this.resendApiKey = process.env.RESEND_API_KEY; // HTTPS fallback (no SMTP needed)
 
     if (user && pass) {
       // Prefer explicit SMTP host if provided; otherwise fall back to Gmail service
@@ -23,6 +25,7 @@ class EmailService {
             connectionTimeout: 15000, // 15s connect timeout
             greetingTimeout: 10000,   // 10s EHLO timeout
             socketTimeout: 20000,     // 20s overall socket inactivity
+            keepAlive: true,
             tls: { rejectUnauthorized: false },
           }
         : {
@@ -34,6 +37,7 @@ class EmailService {
             connectionTimeout: 15000,
             greetingTimeout: 10000,
             socketTimeout: 20000,
+            keepAlive: true,
           };
 
       this.transporter = nodemailer.createTransport(transportOptions);
@@ -44,22 +48,52 @@ class EmailService {
     }
   }
 
+  async sendViaSMTP(mailOptions) {
+    if (!this.transporter) return false;
+    try {
+      await this.transporter.sendMail(mailOptions);
+      return true;
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async sendViaResend({ to, subject, html, text }) {
+    if (!this.resendApiKey) return false;
+    try {
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.resendApiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          from: this.fromEmail,
+          to: Array.isArray(to) ? to : [to],
+          subject,
+          html,
+          text
+        })
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        throw new Error(`Resend API error: ${res.status} ${res.statusText} ${body}`);
+      }
+      return true;
+    } catch (error) {
+      console.error('Resend sending error:', error);
+      return false;
+    }
+  }
+
   generateOTP() {
     // Generate a random 6-digit OTP
     return crypto.randomInt(100000, 999999).toString();
   }
 
   async sendOTP(email, otp) {
-    if (!this.emailConfigured) {
-      console.log(`Mock OTP sent to ${email}: ${otp}`);
-      return true;
-    }
-
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to: email,
-      subject: 'ShopRadar - Email Verification OTP',
-      html: `
+    const subject = 'ShopRadar - Email Verification OTP';
+    const html = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 10px 10px 0 0; text-align: center;">
             <h1 style="margin: 0; font-size: 28px;">ShopRadar</h1>
@@ -85,12 +119,20 @@ class EmailService {
             </p>
           </div>
         </div>
-      `
+      `;
+    const text = `ShopRadar Email Verification\n\nYour verification code is: ${otp}\n\nThis code will expire in 10 minutes.\n\nIf you didn't request this verification, please ignore this email.`;
+
+    const mailOptions = {
+      from: this.fromEmail,
+      to: email,
+      subject,
+      html
     };
 
     // Try send with one quick retry on transient network errors
     try {
-      await this.transporter.sendMail(mailOptions);
+      if (!this.emailConfigured) throw Object.assign(new Error('SMTP not configured'), { code: 'SMTP_DISABLED' });
+      await this.sendViaSMTP(mailOptions);
       return true;
     } catch (error) {
       console.error('Email sending error (first attempt):', error);
@@ -98,27 +140,22 @@ class EmailService {
       if (transient) {
         try {
           await new Promise((r) => setTimeout(r, 1000));
-          await this.transporter.sendMail(mailOptions);
+          await this.sendViaSMTP(mailOptions);
           return true;
         } catch (err2) {
           console.error('Email sending error (retry):', err2);
         }
       }
+      // Fallback to HTTPS provider if configured
+      const fallbackOk = await this.sendViaResend({ to: email, subject, html, text });
+      if (fallbackOk) return true;
       return false;
     }
   }
 
   async sendPasswordResetOTP(email, otp) {
-    if (!this.emailConfigured) {
-      console.log(`Mock Password Reset OTP sent to ${email}: ${otp}`);
-      return true;
-    }
-
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to: email,
-      subject: 'ShopRadar - Password Reset OTP',
-      html: `
+    const subject = 'ShopRadar - Password Reset OTP';
+    const html = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 10px 10px 0 0; text-align: center;">
             <h1 style="margin: 0; font-size: 28px;">ShopRadar</h1>
@@ -144,14 +181,24 @@ class EmailService {
             </p>
           </div>
         </div>
-      `
+      `;
+    const text = `ShopRadar Password Reset\n\nYour reset code is: ${otp}\n\nThis code will expire in 10 minutes.`;
+
+    const mailOptions = {
+      from: this.fromEmail,
+      to: email,
+      subject,
+      html
     };
 
     try {
-      await this.transporter.sendMail(mailOptions);
+      if (!this.emailConfigured) throw Object.assign(new Error('SMTP not configured'), { code: 'SMTP_DISABLED' });
+      await this.sendViaSMTP(mailOptions);
       return true;
     } catch (error) {
       console.error('Email sending error:', error);
+      const fallbackOk = await this.sendViaResend({ to: email, subject, html, text });
+      if (fallbackOk) return true;
       return false;
     }
   }
@@ -173,7 +220,7 @@ class EmailService {
       : 'We regret to inform you that your shop verification could not be approved at this time.';
 
     const mailOptions = {
-      from: process.env.EMAIL_USER,
+      from: this.fromEmail,
       to: email,
       subject: subject,
       html: `
@@ -239,10 +286,14 @@ class EmailService {
     };
 
     try {
-      await this.transporter.sendMail(mailOptions);
+      if (!this.emailConfigured) throw Object.assign(new Error('SMTP not configured'), { code: 'SMTP_DISABLED' });
+      await this.sendViaSMTP(mailOptions);
       return true;
     } catch (error) {
       console.error('Error sending verification notification email:', error);
+      const text = `${isApproved ? 'Approved' : 'Update'} for ${shopName}. ${notes ? `Notes: ${notes}` : ''}`;
+      const fallbackOk = await this.sendViaResend({ to: email, subject, html: mailOptions.html, text });
+      if (fallbackOk) return true;
       return false;
     }
   }
