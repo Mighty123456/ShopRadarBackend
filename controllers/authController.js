@@ -64,6 +64,7 @@ exports.register = async (req, res) => {
     });
 
     await user.save();
+    console.log(`User created successfully: ${user._id}`);
 
     // If it's a shop owner, create shop record with only basic data (Step 1)
     let shop = null;
@@ -124,12 +125,15 @@ exports.register = async (req, res) => {
       await user.save();
     }
 
-    // Send OTP email synchronously and require success
-    const emailSent = await emailService.sendOTP(email, otp);
-    if (!emailSent) {
-      return res.status(500).json({ message: 'Failed to send verification email' });
-    }
+    // Send OTP email asynchronously (don't wait for completion)
+    console.log(`Sending OTP email to: ${email}`);
+    emailService.sendOTP(email, otp).then(() => {
+      console.log(`OTP email sent successfully to: ${email}`);
+    }).catch(err => {
+      console.error('Failed to send OTP email:', err);
+    });
 
+    console.log(`Registration completed for user: ${user._id}`);
     res.status(201).json({ 
       message: 'Registration successful. Please check your email for verification code.',
       userId: user._id,
@@ -229,10 +233,10 @@ exports.resendOTP = async (req, res) => {
     user.lastOtpSent = new Date();
     await user.save();
 
-    const emailSent = await emailService.sendOTP(email, otp);
-    if (!emailSent) {
-      return res.status(500).json({ message: 'Failed to send verification email' });
-    }
+    // Send OTP email asynchronously (don't wait for completion)
+    emailService.sendOTP(email, otp).catch(err => {
+      console.error('Failed to resend OTP email:', err);
+    });
 
     res.json({ message: 'OTP resent successfully' });
   } catch (err) {
