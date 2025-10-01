@@ -3,15 +3,45 @@ const crypto = require('crypto');
 
 class EmailService {
   constructor() {
-    if (process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {
-      this.transporter = nodemailer.createTransport({
-        service: 'gmail',
-        auth: {
-          user: process.env.EMAIL_USER,
-          pass: process.env.EMAIL_PASSWORD
+    const user = process.env.EMAIL_USER;
+    const pass = process.env.EMAIL_PASSWORD;
+    const host = process.env.EMAIL_HOST;
+    const port = process.env.EMAIL_PORT ? parseInt(process.env.EMAIL_PORT, 10) : undefined;
+    const secure = typeof process.env.EMAIL_SECURE === 'string'
+      ? process.env.EMAIL_SECURE.toLowerCase() === 'true'
+      : undefined;
+    const service = process.env.EMAIL_SERVICE || 'gmail';
+
+    if (user && pass) {
+      let transportOptions;
+      if (host) {
+        // Generic SMTP configuration (e.g., SendGrid/Mailgun/Brevo or custom SMTP)
+        transportOptions = {
+          host,
+          port: port ?? 587,
+          secure: secure ?? false,
+          auth: { user, pass },
+        };
+      } else {
+        // Service-based configuration (defaults to Gmail)
+        transportOptions = {
+          service,
+          auth: { user, pass },
+        };
+      }
+
+      this.transporter = nodemailer.createTransport(transportOptions);
+      this.emailConfigured = true;
+
+      // Attempt a connection verification at startup to surface misconfigurations early
+      this.transporter.verify((err, success) => {
+        if (err) {
+          console.error('Email transporter verification failed:', err);
+          this.emailConfigured = false;
+        } else {
+          console.log('Email transporter is ready:', success);
         }
       });
-      this.emailConfigured = true;
     } else {
       console.log('Email credentials not configured. Email functionality will be disabled.');
       this.emailConfigured = false;
@@ -19,9 +49,8 @@ class EmailService {
   }
 
   generateOTP() {
-    // For testing, use a fixed OTP
-    return '123456';
-    // return crypto.randomInt(100000, 999999).toString();
+    // Generate a random 6-digit OTP
+    return crypto.randomInt(100000, 999999).toString();
   }
 
   async sendOTP(email, otp) {
@@ -31,7 +60,7 @@ class EmailService {
     }
 
     const mailOptions = {
-      from: process.env.EMAIL_USER,
+      from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
       to: email,
       subject: 'ShopRadar - Email Verification OTP',
       html: `
@@ -79,7 +108,7 @@ class EmailService {
     }
 
     const mailOptions = {
-      from: process.env.EMAIL_USER,
+      from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
       to: email,
       subject: 'ShopRadar - Password Reset OTP',
       html: `
@@ -137,7 +166,7 @@ class EmailService {
       : 'We regret to inform you that your shop verification could not be approved at this time.';
 
     const mailOptions = {
-      from: process.env.EMAIL_USER,
+      from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
       to: email,
       subject: subject,
       html: `
