@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const adminAuthController = require('../controllers/adminAuthController');
+const offerController = require('../controllers/offerController');
 const adminAuthMiddleware = require('../middleware/adminAuthMiddleware');
 
 router.post('/login', adminAuthController.adminLogin);
@@ -14,5 +15,8 @@ router.post('/logout', adminAuthController.adminLogout);
 router.get('/profile', adminAuthController.getAdminProfile);
 router.post('/change-password', adminAuthController.changePassword);
 router.post('/refresh-token', adminAuthController.refreshToken);
+
+// Offer management
+router.get('/offers/cleanup', offerController.cleanupInvalidOffers);
 
 module.exports = router;
