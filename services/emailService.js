@@ -3,14 +3,40 @@ const crypto = require('crypto');
 
 class EmailService {
   constructor() {
-    if (process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {
-      this.transporter = nodemailer.createTransport({
-        service: 'gmail',
-        auth: {
-          user: process.env.EMAIL_USER,
-          pass: process.env.EMAIL_PASSWORD
-        }
-      });
+    const user = process.env.EMAIL_USER;
+    const pass = process.env.EMAIL_PASSWORD;
+    const host = process.env.EMAIL_HOST; // e.g., smtp.mailtrap.io, smtp.gmail.com, smtp.sendgrid.net
+    const port = process.env.EMAIL_PORT ? Number(process.env.EMAIL_PORT) : undefined; // e.g., 2525, 587, 465
+    const secure = process.env.EMAIL_SECURE === 'true'; // true for 465, false for 587/2525
+
+    if (user && pass) {
+      // Prefer explicit SMTP host if provided; otherwise fall back to Gmail service
+      const transportOptions = host
+        ? {
+            host,
+            port: port ?? 587,
+            secure, // use TLS directly for port 465
+            auth: { user, pass },
+            pool: true,
+            maxConnections: 3,
+            maxMessages: 50,
+            connectionTimeout: 15000, // 15s connect timeout
+            greetingTimeout: 10000,   // 10s EHLO timeout
+            socketTimeout: 20000,     // 20s overall socket inactivity
+            tls: { rejectUnauthorized: false },
+          }
+        : {
+            service: 'gmail',
+            auth: { user, pass },
+            pool: true,
+            maxConnections: 3,
+            maxMessages: 50,
+            connectionTimeout: 15000,
+            greetingTimeout: 10000,
+            socketTimeout: 20000,
+          };
+
+      this.transporter = nodemailer.createTransport(transportOptions);
       this.emailConfigured = true;
     } else {
       console.log('Email credentials not configured. Email functionality will be disabled.');
@@ -62,11 +88,22 @@ class EmailService {
       `
     };
 
+    // Try send with one quick retry on transient network errors
     try {
       await this.transporter.sendMail(mailOptions);
       return true;
     } catch (error) {
-      console.error('Email sending error:', error);
+      console.error('Email sending error (first attempt):', error);
+      const transient = error && (error.code === 'ETIMEDOUT' || error.code === 'ECONNECTION' || error.code === 'EAI_AGAIN');
+      if (transient) {
+        try {
+          await new Promise((r) => setTimeout(r, 1000));
+          await this.transporter.sendMail(mailOptions);
+          return true;
+        } catch (err2) {
+          console.error('Email sending error (retry):', err2);
+        }
+      }
       return false;
     }
   }
