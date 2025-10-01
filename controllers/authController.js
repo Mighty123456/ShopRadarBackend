@@ -60,7 +60,8 @@ exports.register = async (req, res) => {
         code: otp,
         expiresAt: otpExpiry
       },
-      lastOtpSent: new Date()
+      lastOtpSent: new Date(),
+      otpAttempts: 1
     });
 
     await user.save();
@@ -125,13 +126,27 @@ exports.register = async (req, res) => {
       await user.save();
     }
 
-    // Send OTP email asynchronously (don't wait for completion)
+    // Send OTP email and handle result
     console.log(`Sending OTP email to: ${email}`);
-    emailService.sendOTP(email, otp).then(() => {
-      console.log(`OTP email sent successfully to: ${email}`);
-    }).catch(err => {
-      console.error('Failed to send OTP email:', err);
-    });
+    const emailSent = await emailService.sendOTP(email, otp);
+    if (!emailSent) {
+      console.error('Failed to send OTP email to:', email);
+      // In non-production, surface OTP in logs to unblock testing
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`[DEV ONLY] OTP for ${email}: ${otp}`);
+      }
+      return res.status(500).json({
+        message: 'Registration created, but failed to send OTP email. Please use Resend Code.',
+        userId: user._id,
+        needsVerification: true,
+        shopId: shop ? shop._id : null
+      });
+    }
+
+    // In non-production, also log OTP to help local/dev testing
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[DEV ONLY] OTP for ${email}: ${otp}`);
+    }
 
     console.log(`Registration completed for user: ${user._id}`);
     res.status(201).json({ 
@@ -229,14 +244,23 @@ exports.resendOTP = async (req, res) => {
       code: otp,
       expiresAt: otpExpiry
     };
-    user.otpAttempts = user.otpAttempts + 1;
+    user.otpAttempts = (user.otpAttempts || 0) + 1;
     user.lastOtpSent = new Date();
     await user.save();
 
-    // Send OTP email asynchronously (don't wait for completion)
-    emailService.sendOTP(email, otp).catch(err => {
-      console.error('Failed to resend OTP email:', err);
-    });
+    // Send OTP email and handle result
+    const resendOk = await emailService.sendOTP(email, otp);
+    if (!resendOk) {
+      console.error('Failed to resend OTP email to:', email);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`[DEV ONLY] OTP for ${email}: ${otp}`);
+      }
+      return res.status(500).json({ message: 'Failed to send OTP email. Please try again later.' });
+    }
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[DEV ONLY] OTP for ${email}: ${otp}`);
+    }
 
     res.json({ message: 'OTP resent successfully' });
   } catch (err) {
