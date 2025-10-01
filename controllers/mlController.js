@@ -349,7 +349,7 @@ exports.updateUserProfile = async (req, res) => {
     });
 
     // Recalculate profile completeness
-    userProfile.profileCompleteness = this.calculateProfileCompleteness(userProfile);
+    userProfile.profileCompleteness = calculateProfileCompleteness(userProfile);
 
     await userProfile.save();
 
@@ -370,7 +370,7 @@ exports.updateUserProfile = async (req, res) => {
 /**
  * Calculate profile completeness
  */
-calculateProfileCompleteness(profile) {
+function calculateProfileCompleteness(profile) {
   let completeness = 0;
   const maxScore = 100;
 
