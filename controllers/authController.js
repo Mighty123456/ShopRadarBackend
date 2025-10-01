@@ -126,31 +126,39 @@ exports.register = async (req, res) => {
       await user.save();
     }
 
-    // Send OTP email and handle result
+    // Send OTP email without blocking the response for too long
     console.log(`Sending OTP email to: ${email}`);
-    const emailSent = await emailService.sendOTP(email, otp);
-    if (!emailSent) {
-      console.error('Failed to send OTP email to:', email);
-      // In non-production, surface OTP in logs to unblock testing
+    const sendPromise = emailService.sendOTP(email, otp);
+    const result = await Promise.race([
+      sendPromise,
+      new Promise((resolve) => setTimeout(() => resolve('timeout'), 8000))
+    ]);
+
+    if (result === true) {
       if (process.env.NODE_ENV !== 'production') {
         console.log(`[DEV ONLY] OTP for ${email}: ${otp}`);
       }
-      return res.status(500).json({
-        message: 'Registration created, but failed to send OTP email. Please use Resend Code.',
+      console.log(`Registration completed for user: ${user._id}`);
+      return res.status(201).json({ 
+        message: 'Registration successful. Please check your email for verification code.',
         userId: user._id,
         needsVerification: true,
         shopId: shop ? shop._id : null
       });
     }
 
-    // In non-production, also log OTP to help local/dev testing
+    // If timed out or failed, still return 201 so client can proceed to OTP screen
+    if (result === 'timeout') {
+      console.warn(`Email send timed out for: ${email}. Allowing client to proceed.`);
+      // Let the original send continue in background; do not await sendPromise
+    } else {
+      console.error('Failed to send OTP email to:', email);
+    }
     if (process.env.NODE_ENV !== 'production') {
       console.log(`[DEV ONLY] OTP for ${email}: ${otp}`);
     }
-
-    console.log(`Registration completed for user: ${user._id}`);
-    res.status(201).json({ 
-      message: 'Registration successful. Please check your email for verification code.',
+    return res.status(201).json({
+      message: 'Registration created. If OTP email is delayed, tap Resend Code.',
       userId: user._id,
       needsVerification: true,
       shopId: shop ? shop._id : null
