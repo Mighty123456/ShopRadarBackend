@@ -48,7 +48,7 @@ exports.searchShopsPublic = async (req, res) => {
 
     const [shops, total] = await Promise.all([
       Shop.find(filter)
-        .select('shopName address phone location verificationStatus createdAt')
+        .select('shopName address phone location verificationStatus rating reviewCount createdAt')
         .sort(sortOption)
         .skip(skip)
         .limit(limit),
@@ -60,6 +60,34 @@ exports.searchShopsPublic = async (req, res) => {
       })
     ]);
 
+    // Fetch offers for each shop
+    const shopIds = shops.map(s => s._id);
+    const now = new Date();
+    const shopOffers = await Offer.find({
+      shopId: { $in: shopIds },
+      status: 'active',
+      startDate: { $lte: now },
+      endDate: { $gte: now }
+    }).select('shopId title description discountType discountValue startDate endDate');
+
+    // Group offers by shop ID
+    const offersByShop = {};
+    for (const offer of shopOffers) {
+      const shopId = offer.shopId.toString();
+      if (!offersByShop[shopId]) {
+        offersByShop[shopId] = [];
+      }
+      offersByShop[shopId].push({
+        id: offer._id,
+        title: offer.title,
+        description: offer.description,
+        discountType: offer.discountType,
+        discountValue: offer.discountValue,
+        startDate: offer.startDate,
+        endDate: offer.endDate
+      });
+    }
+
     res.json({
       success: true,
       data: shops.map(s => ({
@@ -68,6 +96,9 @@ exports.searchShopsPublic = async (req, res) => {
         address: s.address,
         phone: s.phone,
         location: s.location,
+        rating: s.rating || 0,
+        reviewCount: s.reviewCount || 0,
+        offers: offersByShop[s._id.toString()] || [],
         createdAt: s.createdAt
       })),
       pagination: {
@@ -243,6 +274,34 @@ exports.getShopsNearLocation = async (req, res) => {
     .populate('ownerId', 'fullName')
     .select('shopName address phone location verificationStatus rating reviewCount openingHours category description amenities');
     
+    // Fetch offers for each shop
+    const shopIds = shops.map(s => s._id);
+    const now = new Date();
+    const shopOffers = await Offer.find({
+      shopId: { $in: shopIds },
+      status: 'active',
+      startDate: { $lte: now },
+      endDate: { $gte: now }
+    }).select('shopId title description discountType discountValue startDate endDate');
+
+    // Group offers by shop ID
+    const offersByShop = {};
+    for (const offer of shopOffers) {
+      const shopId = offer.shopId.toString();
+      if (!offersByShop[shopId]) {
+        offersByShop[shopId] = [];
+      }
+      offersByShop[shopId].push({
+        id: offer._id,
+        title: offer.title,
+        description: offer.description,
+        discountType: offer.discountType,
+        discountValue: offer.discountValue,
+        startDate: offer.startDate,
+        endDate: offer.endDate
+      });
+    }
+    
     // Calculate distance for each shop and add it to the response
     const shopsWithDistance = shops.map(shop => {
       const shopLocation = shop.location.coordinates;
@@ -271,6 +330,7 @@ exports.getShopsNearLocation = async (req, res) => {
         category: shop.category || 'Other',
         description: shop.description || '',
         amenities: shop.amenities || [],
+        offers: offersByShop[shop._id.toString()] || [],
         isLive: true,
         isOpen: true, // Assuming all returned shops are open since we filter by isLive
         verificationStatus: shop.verificationStatus,

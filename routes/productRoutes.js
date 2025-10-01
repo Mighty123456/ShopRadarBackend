@@ -6,6 +6,9 @@ const adminAuthMiddleware = require('../middleware/adminAuthMiddleware');
 // Public product search
 router.get('/search', productController.searchProductsPublic);
 
+// Enhanced product search with shops and offers
+router.get('/search-with-shops', productController.searchProductsWithShopsAndOffers);
+
 // All product routes require admin authentication
 router.use(adminAuthMiddleware);
 
