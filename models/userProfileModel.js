@@ -168,7 +168,7 @@ const userProfileSchema = new mongoose.Schema({
 });
 
 // Indexes for efficient querying
-userProfileSchema.index({ userId: 1 });
+// Note: `unique: true` on userId already creates an index; avoid duplicating it here
 userProfileSchema.index({ 'segments.userType': 1 });
 userProfileSchema.index({ 'segments.customerValue': 1 });
 userProfileSchema.index({ 'preferences.preferredLocations.location': '2dsphere' });
