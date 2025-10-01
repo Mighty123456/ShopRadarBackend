@@ -141,6 +141,183 @@ exports.searchProductsPublic = async (req, res) => {
   }
 };
 
+// Search products with shops that have offers (enhanced search)
+exports.searchProductsWithShopsAndOffers = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = Math.min(parseInt(req.query.limit) || 10, 50);
+    const skip = (page - 1) * limit;
+
+    const {
+      q, // keyword
+      category,
+      minPrice,
+      maxPrice,
+      inStock,
+      sort, // relevance|price_asc|price_desc|new
+      latitude,
+      longitude,
+      radius = 10000 // radius in meters for shop location filtering
+    } = req.query;
+
+    // Build product filter
+    const productFilter = { status: 'active' };
+    if (category) {
+      productFilter.category = category;
+    }
+    if (minPrice != null || maxPrice != null) {
+      productFilter.price = {};
+      if (minPrice != null) productFilter.price.$gte = Number(minPrice);
+      if (maxPrice != null) productFilter.price.$lte = Number(maxPrice);
+    }
+    if (inStock === 'true') {
+      productFilter.stock = { $gt: 0 };
+    }
+    if (q) {
+      const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const terms = escaped
+        .split(/\s+/)
+        .filter(Boolean)
+        .map(t => t.trim());
+      const lookahead = terms.length
+        ? new RegExp(terms.map(t => `(?=.*${t})`).join('') + '.*', 'i')
+        : new RegExp(escaped, 'i');
+
+      productFilter.$or = [
+        { name: lookahead },
+        { description: lookahead },
+        { category: lookahead }
+      ];
+    }
+
+    // Build shop filter for location-based search
+    const shopFilter = {
+      verificationStatus: 'approved',
+      isActive: true,
+      isLive: true
+    };
+
+    if (latitude && longitude) {
+      shopFilter.location = {
+        $near: {
+          $geometry: { type: 'Point', coordinates: [parseFloat(longitude), parseFloat(latitude)] },
+          $maxDistance: parseInt(radius)
+        }
+      };
+    }
+
+    // Get shops that match the location filter
+    const shops = await Shop.find(shopFilter).select('_id shopName address phone location rating isLive');
+    const shopIds = shops.map(s => s._id);
+
+    // Add shop filter to product filter
+    productFilter.shopId = { $in: shopIds };
+
+    // Sorting
+    let sortOption = { createdAt: -1, _id: 1 };
+    if (sort === 'price_asc') sortOption = { price: 1, _id: 1 };
+    else if (sort === 'price_desc') sortOption = { price: -1, _id: 1 };
+
+    // Get products
+    const [items, total] = await Promise.all([
+      Product.find(productFilter)
+        .select('name description category price images status createdAt shopId')
+        .populate('shopId', 'shopName address phone location rating isLive isActive verificationStatus')
+        .sort(sortOption)
+        .skip(skip)
+        .limit(limit),
+      Product.countDocuments(productFilter)
+    ]);
+
+    // Fetch offers for all shops (not just those with matching products)
+    const now = new Date();
+    const allShopOffers = await Offer.find({
+      shopId: { $in: shopIds },
+      status: 'active',
+      startDate: { $lte: now },
+      endDate: { $gte: now }
+    })
+    .populate('productId', 'name category price images')
+    .select('shopId productId title description discountType discountValue startDate endDate');
+
+    // Group offers by shop ID
+    const offersByShop = {};
+    for (const offer of allShopOffers) {
+      const shopId = offer.shopId.toString();
+      if (!offersByShop[shopId]) {
+        offersByShop[shopId] = [];
+      }
+      offersByShop[shopId].push({
+        id: offer._id,
+        title: offer.title,
+        description: offer.description,
+        discountType: offer.discountType,
+        discountValue: offer.discountValue,
+        startDate: offer.startDate,
+        endDate: offer.endDate,
+        product: offer.productId ? {
+          id: offer.productId._id,
+          name: offer.productId.name,
+          category: offer.productId.category,
+          price: offer.productId.price,
+          images: offer.productId.images || []
+        } : null
+      });
+    }
+
+    // Create shop map for easy lookup
+    const shopMap = {};
+    for (const shop of shops) {
+      shopMap[shop._id.toString()] = {
+        id: shop._id,
+        name: shop.shopName,
+        address: shop.address,
+        phone: shop.phone,
+        location: shop.location,
+        rating: shop.rating || 0,
+        isLive: shop.isLive,
+        offers: offersByShop[shop._id.toString()] || []
+      };
+    }
+
+    // Filter products and include shop data
+    const filteredProducts = items
+      .filter(p => p.shopId && p.shopId.isActive && p.shopId.isLive && p.shopId.verificationStatus === 'approved')
+      .map(p => ({
+        id: p._id,
+        name: p.name,
+        description: p.description,
+        category: p.category,
+        price: p.price,
+        image: Array.isArray(p.images) && p.images.length ? p.images[0].url : undefined,
+        shop: shopMap[p.shopId._id.toString()] || null,
+        createdAt: p.createdAt
+      }));
+
+    // Get all shops with offers (including those without matching products)
+    const shopsWithOffers = Object.values(shopMap).filter(shop => shop.offers.length > 0);
+
+    res.json({
+      success: true,
+      data: {
+        products: filteredProducts,
+        shops: shopsWithOffers,
+        totalProducts: total,
+        totalShops: shopsWithOffers.length
+      },
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(total / limit),
+        totalItems: total,
+        limit
+      }
+    });
+  } catch (error) {
+    console.error('Search products with shops and offers error:', error);
+    res.status(500).json({ success: false, message: 'Failed to search products with shops' });
+  }
+};
+
 // Get all products with pagination and filtering
 exports.getAllProducts = async (req, res) => {
   try {
