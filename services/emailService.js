@@ -35,6 +35,10 @@ class EmailService {
         pool: true,
         maxConnections: 1,
         maxMessages: 5,
+        // For STARTTLS on 587, explicitly require TLS handshake
+        requireTLS: (emailPort || 587) === 587 && !(emailPort === 465 || emailSecure),
+        // Force IPv4 to avoid IPv6 issues on some hosts
+        family: 4,
         tls: {
           rejectUnauthorized: false
         }
@@ -53,6 +57,8 @@ class EmailService {
         pool: true,
         maxConnections: 1,
         maxMessages: 5,
+        requireTLS: true,
+        family: 4,
         tls: {
           rejectUnauthorized: false
         }
