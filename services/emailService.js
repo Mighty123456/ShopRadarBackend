@@ -9,6 +9,9 @@ class EmailService {
   setupEmailTransporter() {
     const emailUser = process.env.EMAIL_USER;
     const emailPassword = process.env.EMAIL_PASSWORD;
+    const emailHost = process.env.EMAIL_HOST;
+    const emailPort = process.env.EMAIL_PORT ? parseInt(process.env.EMAIL_PORT, 10) : undefined;
+    const emailSecure = process.env.EMAIL_SECURE === 'true';
     
     if (!emailUser || !emailPassword) {
       console.log('Email credentials not configured');
@@ -16,13 +19,45 @@ class EmailService {
       return;
     }
 
-    this.transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: emailUser,
-        pass: emailPassword
-      }
-    });
+    // Prefer explicit SMTP host if provided (e.g., smtp.gmail.com)
+    if (emailHost) {
+      this.transporter = nodemailer.createTransport({
+        host: emailHost,
+        port: emailPort || 587,
+        secure: emailPort === 465 || emailSecure, // true for 465, false for 587
+        auth: {
+          user: emailUser,
+          pass: emailPassword
+        },
+        connectionTimeout: 30000,
+        greetingTimeout: 20000,
+        socketTimeout: 30000,
+        pool: true,
+        maxConnections: 1,
+        maxMessages: 5,
+        tls: {
+          rejectUnauthorized: false
+        }
+      });
+    } else {
+      // Fallback to Gmail service shortcut
+      this.transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+          user: emailUser,
+          pass: emailPassword
+        },
+        connectionTimeout: 30000,
+        greetingTimeout: 20000,
+        socketTimeout: 30000,
+        pool: true,
+        maxConnections: 1,
+        maxMessages: 5,
+        tls: {
+          rejectUnauthorized: false
+        }
+      });
+    }
     
     this.emailConfigured = true;
     console.log('Email service configured');
@@ -39,7 +74,7 @@ class EmailService {
     }
 
     const mailOptions = {
-      from: process.env.EMAIL_USER,
+      from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
       to: email,
       subject: 'ShopRadar - Your Verification Code',
       html: `
@@ -77,7 +112,7 @@ class EmailService {
     }
 
     const mailOptions = {
-      from: process.env.EMAIL_USER,
+      from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
       to: email,
       subject: 'ShopRadar - Password Reset Code',
       html: `
@@ -118,7 +153,7 @@ class EmailService {
     const subject = isApproved ? 'ShopRadar - Shop Approved!' : 'ShopRadar - Shop Verification Update';
 
     const mailOptions = {
-      from: process.env.EMAIL_USER,
+      from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
       to: email,
       subject: subject,
       html: `
