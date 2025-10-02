@@ -18,38 +18,20 @@ class EmailService {
       return;
     }
 
-    // Create email transporter with simple configuration
-    const config = this.getEmailConfig(emailUser, emailPassword);
-    this.transporter = nodemailer.createTransport(config);
+    // Use the exact same Gmail configuration that works for admin emails
+    this.transporter = nodemailer.createTransporter({
+      service: 'gmail',
+      auth: {
+        user: emailUser,
+        pass: emailPassword
+      }
+    });
+    
     this.emailConfigured = true;
+    console.log('✅ Email service configured with Gmail');
 
     // Test the email connection
     this.testConnection();
-  }
-
-  getEmailConfig(user, password) {
-    const host = process.env.EMAIL_HOST;
-    
-    if (host) {
-      // Custom SMTP server (like Brevo, SendGrid, etc.)
-      return {
-        host: host,
-        port: parseInt(process.env.EMAIL_PORT) || 587,
-        secure: false, // Use STARTTLS
-        auth: { user, pass: password },
-        connectionTimeout: 60000, // 1 minute timeout
-        socketTimeout: 60000
-      };
-    } else {
-      // Default to Gmail
-      return {
-        service: 'gmail',
-        auth: { user, pass: password },
-        connectionTimeout: 60000,
-        socketTimeout: 60000,
-        tls: { rejectUnauthorized: false }
-      };
-    }
   }
 
   testConnection() {
@@ -70,12 +52,6 @@ class EmailService {
 
   // Send OTP email for user verification
   async sendOTP(email, otp) {
-    // If email is not configured, just log the OTP (for development)
-    if (!this.emailConfigured) {
-      console.log(`📧 Mock OTP sent to ${email}: ${otp}`);
-      return true;
-    }
-
     const emailContent = {
       from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
       to: email,
@@ -120,6 +96,15 @@ class EmailService {
 
   // Generic email sending method
   async sendEmail(emailContent, type = 'email') {
+    // If email is not configured, log for development and return success
+    if (!this.emailConfigured) {
+      console.log(`📧 Mock ${type} sent to ${emailContent.to} (email not configured)`);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`[DEV ONLY] Email content:`, emailContent.subject);
+      }
+      return true;
+    }
+
     try {
       const result = await this.transporter.sendMail(emailContent);
       console.log(`✅ ${type} sent successfully to ${emailContent.to}`);
@@ -132,11 +117,6 @@ class EmailService {
 
   // Send password reset OTP
   async sendPasswordResetOTP(email, otp) {
-    if (!this.emailConfigured) {
-      console.log(`📧 Mock Password Reset OTP sent to ${email}: ${otp}`);
-      return true;
-    }
-
     const emailContent = {
       from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
       to: email,
@@ -181,11 +161,6 @@ class EmailService {
 
   // Send shop verification notification (approved/rejected)
   async sendShopVerificationNotification(email, shopName, status, notes = '') {
-    if (!this.emailConfigured) {
-      console.log(`📧 Mock verification notification sent to ${email}: Shop ${shopName} ${status}`);
-      return true;
-    }
-
     const isApproved = status === 'approved';
     const subject = isApproved 
       ? 'ShopRadar - Shop Approved! 🎉' 
