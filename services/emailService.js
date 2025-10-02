@@ -69,6 +69,63 @@ class EmailService {
     console.log('Email service configured');
   }
 
+  // Build an alternative Gmail SMTP transporter that flips between 587 STARTTLS and 465 implicit TLS
+  _buildAltGmailTransport() {
+    const emailUser = process.env.EMAIL_USER;
+    const emailPassword = process.env.EMAIL_PASSWORD;
+    const emailHost = process.env.EMAIL_HOST;
+    const emailPort = process.env.EMAIL_PORT ? parseInt(process.env.EMAIL_PORT, 10) : undefined;
+    const primaryIsGmail = emailHost === 'smtp.gmail.com' || !emailHost;
+    if (!primaryIsGmail) return null;
+
+    const primaryIs465 = emailHost === 'smtp.gmail.com' && (emailPort === 465 || process.env.EMAIL_SECURE === 'true');
+    const altIs465 = !primaryIs465;
+    return require('nodemailer').createTransport({
+      host: 'smtp.gmail.com',
+      port: altIs465 ? 465 : 587,
+      secure: altIs465,
+      requireTLS: !altIs465,
+      auth: {
+        user: emailUser,
+        pass: emailPassword
+      },
+      connectionTimeout: 20000,
+      greetingTimeout: 15000,
+      socketTimeout: 25000,
+      pool: true,
+      maxConnections: 1,
+      maxMessages: 5,
+      family: 4,
+      tls: { rejectUnauthorized: false, servername: 'smtp.gmail.com' },
+      logger: process.env.NODEMAILER_DEBUG === 'true',
+      debug: process.env.NODEMAILER_DEBUG === 'true'
+    });
+  }
+
+  async _sendWithRetry(mailOptions, purposeLabel) {
+    try {
+      await this.transporter.sendMail(mailOptions);
+      console.log(`${purposeLabel} sent to ${mailOptions.to}`);
+      return true;
+    } catch (error) {
+      console.error(`Failed to send ${purposeLabel}: ${error.message}`);
+      if (/timeout|ETIMEDOUT|ECONNRESET|ECONNREFUSED|EAI_AGAIN/i.test(error.message)) {
+        const alt = this._buildAltGmailTransport();
+        if (alt) {
+          try {
+            console.warn(`Retrying ${purposeLabel} with alternative Gmail SMTP settings...`);
+            await alt.sendMail(mailOptions);
+            console.log(`${purposeLabel} sent to ${mailOptions.to} on retry`);
+            return true;
+          } catch (retryErr) {
+            console.error(`Retry failed for ${purposeLabel}: ${retryErr.message}`);
+          }
+        }
+      }
+      return false;
+    }
+  }
+
   generateOTP() {
     return crypto.randomInt(100000, 999999).toString();
   }
@@ -101,14 +158,7 @@ class EmailService {
       `
     };
 
-    try {
-      await this.transporter.sendMail(mailOptions);
-      console.log(`OTP sent to ${email}`);
-      return true;
-    } catch (error) {
-      console.error(`Failed to send OTP: ${error.message}`);
-      return false;
-    }
+    return this._sendWithRetry(mailOptions, 'OTP');
   }
 
   async sendPasswordResetOTP(email, otp) {
@@ -139,14 +189,7 @@ class EmailService {
       `
     };
 
-    try {
-      await this.transporter.sendMail(mailOptions);
-      console.log(`Password reset OTP sent to ${email}`);
-      return true;
-    } catch (error) {
-      console.error(`Failed to send password reset OTP: ${error.message}`);
-      return false;
-    }
+    return this._sendWithRetry(mailOptions, 'Password reset OTP');
   }
 
   async sendShopVerificationNotification(email, shopName, status, notes = '') {
@@ -192,14 +235,7 @@ class EmailService {
       `
     };
 
-    try {
-      await this.transporter.sendMail(mailOptions);
-      console.log(`Shop verification email sent to ${email}`);
-      return true;
-    } catch (error) {
-      console.error(`Failed to send shop verification email: ${error.message}`);
-      return false;
-    }
+    return this._sendWithRetry(mailOptions, 'Shop verification email');
   }
 }
 
