@@ -19,7 +19,7 @@ class EmailService {
     }
 
     // Use the exact same Gmail configuration that works for admin emails
-    this.transporter = nodemailer.createTransporter({
+    this.transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
         user: emailUser,
