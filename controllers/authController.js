@@ -257,21 +257,34 @@ exports.resendOTP = async (req, res) => {
     user.lastOtpSent = new Date();
     await user.save();
 
-    // Send OTP email and handle result
-    const resendOk = await emailService.sendOTP(email, otp);
-    if (!resendOk) {
-      console.error('Failed to resend OTP email to:', email);
+    // Send OTP email without blocking too long (mirror register behavior)
+    console.log(`Resending OTP email to: ${email}`);
+    const sendPromise = emailService.sendOTP(email, otp);
+    const result = await Promise.race([
+      sendPromise,
+      new Promise((resolve) => setTimeout(() => resolve('timeout'), 25000))
+    ]);
+
+    if (result === true) {
       if (process.env.NODE_ENV !== 'production') {
         console.log(`[DEV ONLY] OTP for ${email}: ${otp}`);
       }
-      return res.status(500).json({ message: 'Failed to send OTP email. Please try again later.' });
+      return res.json({ message: 'OTP resent successfully' });
     }
 
+    if (result === 'timeout') {
+      console.warn(`Email resend timed out for: ${email}. Informing client to check inbox shortly.`);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`[DEV ONLY] OTP for ${email}: ${otp}`);
+      }
+      return res.json({ message: 'Resend initiated. Email may arrive shortly even if delayed.' });
+    }
+
+    console.error('Failed to resend OTP email to:', email);
     if (process.env.NODE_ENV !== 'production') {
       console.log(`[DEV ONLY] OTP for ${email}: ${otp}`);
     }
-
-    res.json({ message: 'OTP resent successfully' });
+    return res.status(500).json({ message: 'Failed to send OTP email. Please try again later.' });
   } catch (err) {
     console.error('Resend OTP error:', err);
     res.status(500).json({ message: 'Server error' });
