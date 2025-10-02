@@ -131,7 +131,8 @@ exports.register = async (req, res) => {
     const sendPromise = emailService.sendOTP(email, otp);
     const result = await Promise.race([
       sendPromise,
-      new Promise((resolve) => setTimeout(() => resolve('timeout'), 8000))
+      // Allow longer time in hosted environments where SMTP handshakes can be slow
+      new Promise((resolve) => setTimeout(() => resolve('timeout'), 25000))
     ]);
 
     if (result === true) {
