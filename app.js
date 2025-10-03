@@ -16,6 +16,8 @@ const uploadRoutes = require('./routes/uploadRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const offerRoutes = require('./routes/offerRoutes');
 const mlRoutes = require('./routes/mlRoutes');
+const searchRoutes = require('./routes/searchRoutes');
+const rankingRoutes = require('./routes/rankingRoutes');
 const { passport: googlePassport } = require('./services/googleAuthService');
 const websocketService = require('./services/websocketService');
 const updateLastActive = require('./middleware/updateLastActive');
@@ -64,6 +66,8 @@ app.use('/api/upload', uploadRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/offers', offerRoutes);
 app.use('/api/ml', mlRoutes);
+app.use('/api/search', searchRoutes);
+app.use('/api/ranking', rankingRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'OK', message: 'ShopRadar API is running' });

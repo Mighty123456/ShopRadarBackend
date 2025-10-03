@@ -4,6 +4,7 @@ const Recommendation = require('../models/recommendationModel');
 const Product = require('../models/productModel');
 const Shop = require('../models/shopModel');
 const Offer = require('../models/offerModel');
+const RankingService = require('./rankingService');
 const { Matrix } = require('ml-matrix');
 const natural = require('natural');
 const Sentiment = require('sentiment');
@@ -175,9 +176,6 @@ class MLRecommendationService {
   async getCollaborativeFilteringRecommendations(userId, limit = 20) {
     try {
       const similarUsers = await this.findSimilarUsers(userId, 5);
-      if (similarUsers.length === 0) {
-        return [];
-      }
 
       const similarUserIds = similarUsers.map(u => u.userId);
       
@@ -221,7 +219,7 @@ class MLRecommendationService {
       });
 
       // Normalize scores and create recommendations
-      const recommendations = Object.entries(itemScores)
+      let recommendations = Object.entries(itemScores)
         .map(([itemId, data]) => ({
           targetId: itemId,
           targetType: data.targetType,
@@ -230,6 +228,17 @@ class MLRecommendationService {
         }))
         .sort((a, b) => b.score - a.score)
         .slice(0, limit);
+
+      // Cold collaborative fallback: global popularity if no similar users or empty
+      if (similarUsers.length === 0 || recommendations.length === 0) {
+        const popular = await this.getPopularFallbackRecommendations(limit);
+        recommendations = popular.map(p => ({
+          targetId: p.targetId,
+          targetType: p.targetType,
+          score: p.score,
+          confidence: 0.5,
+        }));
+      }
 
       return recommendations;
     } catch (error) {
@@ -395,6 +404,114 @@ class MLRecommendationService {
     }
   }
 
+  // ===== RANKING-ENHANCED RECOMMENDATIONS =====
+
+  /**
+   * Generate ranking-enhanced shop recommendations
+   */
+  async getRankingEnhancedShopRecommendations(userId, userLocation, filters = {}, limit = 20) {
+    try {
+      // Use the advanced ranking service for shops
+      const rankedShops = await RankingService.rankShops(userId, userLocation, filters, limit);
+      
+      // Convert to recommendation format
+      const recommendations = rankedShops.map(shop => {
+        const rawScore = Number(shop.rankingScore);
+        const score = Number.isFinite(rawScore) ? Math.max(0, Math.min(rawScore, 1)) : 0;
+        return {
+          targetId: shop._id,
+          targetType: 'shop',
+          score,
+        confidence: 0.9, // High confidence for ranking-based recommendations
+        sources: ['ranking_enhanced'],
+        metadata: {
+          shopName: shop.shopName,
+          rating: shop.rating,
+          distance: shop.features?.distance,
+          rankingBreakdown: {
+              ruleBased: Number.isFinite(shop.ruleBasedScore) ? shop.ruleBasedScore : 0,
+              clustering: Number.isFinite(shop.clusteringScore) ? shop.clusteringScore : 0,
+              learnToRank: Number.isFinite(shop.ltrScore) ? shop.ltrScore : 0
+          }
+        }
+        };
+      }).sort((a, b) => b.score - a.score);
+
+      return recommendations;
+    } catch (error) {
+      console.error('Error generating ranking-enhanced shop recommendations:', error);
+      // Fallback to hybrid recommendations
+      return this.getHybridRecommendations(userId, userLocation, limit);
+    }
+  }
+
+  /**
+   * Generate ranking-enhanced offer recommendations
+   */
+  async getRankingEnhancedOfferRecommendations(userId, userLocation, filters = {}, limit = 20) {
+    try {
+      // Use the advanced ranking service for offers
+      const rankedOffers = await RankingService.rankOffers(userId, userLocation, filters, limit);
+      
+      // Convert to recommendation format
+      const recommendations = rankedOffers.map(offer => {
+        const rawScore = Number(offer.rankingScore);
+        const score = Number.isFinite(rawScore) ? Math.max(0, Math.min(rawScore, 1)) : 0;
+        return {
+          targetId: offer._id,
+          targetType: 'offer',
+          score,
+        confidence: 0.9, // High confidence for ranking-based recommendations
+        sources: ['ranking_enhanced'],
+        metadata: {
+          title: offer.title,
+          discountValue: offer.discountValue,
+          shopName: offer.shopId?.shopName,
+          distance: offer.features?.distance,
+          rankingBreakdown: {
+              ruleBased: Number.isFinite(offer.ruleBasedScore) ? offer.ruleBasedScore : 0,
+              clustering: Number.isFinite(offer.clusteringScore) ? offer.clusteringScore : 0,
+              learnToRank: Number.isFinite(offer.ltrScore) ? offer.ltrScore : 0
+          }
+        }
+        };
+      }).sort((a, b) => b.score - a.score);
+
+      return recommendations;
+    } catch (error) {
+      console.error('Error generating ranking-enhanced offer recommendations:', error);
+      // Fallback to hybrid recommendations
+      return this.getHybridRecommendations(userId, userLocation, limit);
+    }
+  }
+
+  /**
+   * Generate comprehensive recommendations with ranking
+   */
+  async getComprehensiveRecommendations(userId, userLocation, filters = {}, limit = 20) {
+    try {
+      const [shopRecommendations, offerRecommendations] = await Promise.all([
+        this.getRankingEnhancedShopRecommendations(userId, userLocation, filters, Math.ceil(limit * 0.6)),
+        this.getRankingEnhancedOfferRecommendations(userId, userLocation, filters, Math.ceil(limit * 0.4))
+      ]);
+
+      // Combine and sort by score
+      const allRecommendations = [...shopRecommendations, ...offerRecommendations]
+        .map(r => ({
+          ...r,
+          score: Number.isFinite(Number(r.score)) ? Math.max(0, Math.min(Number(r.score), 1)) : 0
+        }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit);
+
+      return allRecommendations;
+    } catch (error) {
+      console.error('Error generating comprehensive recommendations:', error);
+      // Fallback to hybrid recommendations
+      return this.getHybridRecommendations(userId, userLocation, limit);
+    }
+  }
+
   // ===== HYBRID RECOMMENDATIONS =====
 
   /**
@@ -402,6 +519,7 @@ class MLRecommendationService {
    */
   async getHybridRecommendations(userId, userLocation, limit = 20) {
     try {
+      const variant = this.getABVariant(userId); // 'A' or 'B'
       const [collaborative, contentBased, locationBased] = await Promise.all([
         this.getCollaborativeFilteringRecommendations(userId, limit),
         this.getContentBasedRecommendations(userId, limit),
@@ -411,7 +529,12 @@ class MLRecommendationService {
       // Combine recommendations with weights
       const combinedRecommendations = new Map();
 
-      // Add collaborative filtering (weight: 0.3)
+      // A/B weight sets
+      const weights = variant === 'B'
+        ? { cf: 0.4, cb: 0.3, loc: 0.3 }
+        : { cf: 0.3, cb: 0.4, loc: 0.3 };
+
+      // Add collaborative filtering
       collaborative.forEach(rec => {
         const key = `${rec.targetType}_${rec.targetId}`;
         if (!combinedRecommendations.has(key)) {
@@ -424,12 +547,12 @@ class MLRecommendationService {
           });
         }
         const combined = combinedRecommendations.get(key);
-        combined.score += rec.score * 0.3;
-        combined.confidence += rec.confidence * 0.3;
+        combined.score += rec.score * weights.cf;
+        combined.confidence += rec.confidence * weights.cf;
         combined.sources.push('collaborative');
       });
 
-      // Add content-based (weight: 0.4)
+      // Add content-based
       contentBased.forEach(rec => {
         const key = `${rec.targetType}_${rec.targetId}`;
         if (!combinedRecommendations.has(key)) {
@@ -442,12 +565,12 @@ class MLRecommendationService {
           });
         }
         const combined = combinedRecommendations.get(key);
-        combined.score += rec.score * 0.4;
-        combined.confidence += rec.confidence * 0.4;
+        combined.score += rec.score * weights.cb;
+        combined.confidence += rec.confidence * weights.cb;
         combined.sources.push('content');
       });
 
-      // Add location-based (weight: 0.3)
+      // Add location-based
       locationBased.forEach(rec => {
         const key = `${rec.targetType}_${rec.targetId}`;
         if (!combinedRecommendations.has(key)) {
@@ -460,8 +583,8 @@ class MLRecommendationService {
           });
         }
         const combined = combinedRecommendations.get(key);
-        combined.score += rec.score * 0.3;
-        combined.confidence += rec.confidence * 0.3;
+        combined.score += rec.score * weights.loc;
+        combined.confidence += rec.confidence * weights.loc;
         combined.sources.push('location');
         if (rec.metadata) {
           combined.metadata = rec.metadata;
@@ -469,13 +592,28 @@ class MLRecommendationService {
       });
 
       // Normalize confidence and sort
-      const finalRecommendations = Array.from(combinedRecommendations.values())
+      let finalRecommendations = Array.from(combinedRecommendations.values())
         .map(rec => ({
           ...rec,
           confidence: Math.min(rec.confidence, 1)
         }))
         .sort((a, b) => b.score - a.score)
         .slice(0, limit);
+
+      // Cold-start fallback if empty
+      if (!finalRecommendations.length) {
+        const fallback = await this.getPopularFallbackRecommendations(limit);
+        finalRecommendations = fallback.map(f => ({
+          targetId: f.targetId,
+          targetType: f.targetType,
+          score: f.score,
+          confidence: 0.5,
+          sources: ['fallback'],
+          variant,
+        }));
+      } else {
+        finalRecommendations = finalRecommendations.map(r => ({ ...r, variant }));
+      }
 
       return finalRecommendations;
     } catch (error) {
@@ -570,6 +708,41 @@ class MLRecommendationService {
     
     const normalizedPrice = (price - priceRange.min) / range;
     return 1 - Math.abs(normalizedPrice - 0.5) * 2; // Higher score for prices in middle of range
+  }
+
+  // ===== A/B and Cold-Start Helpers =====
+
+  getABVariant(userId) {
+    // Consistent 50/50 bucket by hashing userId
+    const str = String(userId || '');
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = ((hash << 5) - hash) + str.charCodeAt(i);
+      hash |= 0;
+    }
+    return (Math.abs(hash) % 2) === 0 ? 'A' : 'B';
+  }
+
+  async getPopularFallbackRecommendations(limit = 20) {
+    // Popularity based on recent behaviors across all users
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const behaviors = await UserBehavior.find({
+      createdAt: { $gte: since },
+      behaviorType: { $in: ['view_product', 'click_offer', 'add_to_favorites'] }
+    }).select('targetId targetType behaviorType');
+
+    const scores = {};
+    behaviors.forEach(b => {
+      const key = `${b.targetType}_${b.targetId}`;
+      if (!scores[key]) scores[key] = { targetType: b.targetType, targetId: b.targetId.toString(), score: 0 };
+      // Weight actions: favorite > click > view
+      const w = b.behaviorType === 'add_to_favorites' ? 3 : (b.behaviorType === 'click_offer' ? 2 : 1);
+      scores[key].score += w;
+    });
+
+    return Object.values(scores)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
   }
 
   /**

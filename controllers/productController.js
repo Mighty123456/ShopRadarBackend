@@ -3,6 +3,7 @@ const Shop = require('../models/shopModel');
 const Offer = require('../models/offerModel');
 const { logActivity } = require('./activityController');
 const websocketService = require('../services/websocketService');
+const { expandQueryTerms, computeProductRelevance } = require('../services/searchService');
 
 // Public: Search products (keyword + filters + pagination)
 exports.searchProductsPublic = async (req, res) => {
@@ -33,22 +34,16 @@ exports.searchProductsPublic = async (req, res) => {
       filter.stock = { $gt: 0 };
     }
     if (q) {
-      const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const terms = escaped
-        .split(/\s+/)
-        .filter(Boolean)
-        .map(t => t.trim());
-      // Use lookahead pattern to ensure all terms appear in any order
-      // Example: (?=.*sony)(?=.*headphone).*  (case-insensitive)
-      const lookahead = terms.length
-        ? new RegExp(terms.map(t => `(?=.*${t})`).join('') + '.*', 'i')
-        : new RegExp(escaped, 'i');
-
-      filter.$or = [
-        { name: lookahead },
-        { description: lookahead },
-        { category: lookahead }
-      ];
+      const tokens = expandQueryTerms(q);
+      const escapedTokens = tokens.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+      const anyToken = escapedTokens.length ? new RegExp(`(${escapedTokens.join('|')})`, 'i') : null;
+      if (anyToken) {
+        filter.$or = [
+          { name: anyToken },
+          { description: anyToken },
+          { category: anyToken }
+        ];
+      }
     }
 
     // Sorting
@@ -105,29 +100,47 @@ exports.searchProductsPublic = async (req, res) => {
       }
     } catch (_) {}
 
+    // Build mapped results with simple relevance
+    const tokensForScore = q ? expandQueryTerms(q) : [];
+    const mapped = items
+      .filter(p => p.shopId && p.shopId.isActive && p.shopId.isLive && p.shopId.verificationStatus === 'approved')
+      .map(p => {
+        const obj = {
+          id: p._id,
+          name: p.name,
+          description: p.description,
+          category: p.category,
+          price: p.price,
+          image: Array.isArray(p.images) && p.images.length ? p.images[0].url : undefined,
+          shop: p.shopId ? {
+            id: p.shopId._id,
+            name: p.shopId.shopName,
+            address: p.shopId.address,
+            phone: p.shopId.phone,
+            location: p.shopId.location,
+            rating: p.shopId.rating,
+            isLive: p.shopId.isLive
+          } : null,
+          bestOfferPercent: productIdToBestDiscount[p._id.toString()] || 0,
+          createdAt: p.createdAt
+        };
+        if (tokensForScore.length) {
+          obj._score = computeProductRelevance({
+            product: obj,
+            shop: obj.shop,
+            tokens: tokensForScore,
+            distanceKm: undefined,
+            bestOfferPercent: obj.bestOfferPercent,
+          });
+        }
+        return obj;
+      });
+
+    const ranked = q ? mapped.sort((a, b) => (b._score || 0) - (a._score || 0)) : mapped;
+
     res.json({
       success: true,
-      data: items
-        .filter(p => p.shopId && p.shopId.isActive && p.shopId.isLive && p.shopId.verificationStatus === 'approved')
-        .map(p => ({
-        id: p._id,
-        name: p.name,
-        description: p.description,
-        category: p.category,
-        price: p.price,
-        image: Array.isArray(p.images) && p.images.length ? p.images[0].url : undefined,
-        shop: p.shopId ? {
-          id: p.shopId._id,
-          name: p.shopId.shopName,
-          address: p.shopId.address,
-          phone: p.shopId.phone,
-          location: p.shopId.location,
-          rating: p.shopId.rating,
-          isLive: p.shopId.isLive
-        } : null,
-        bestOfferPercent: productIdToBestDiscount[p._id.toString()] || 0,
-        createdAt: p.createdAt
-      })),
+      data: ranked.map(({ _score, ...rest }) => rest),
       pagination: {
         currentPage: page,
         totalPages: Math.ceil(total / limit),

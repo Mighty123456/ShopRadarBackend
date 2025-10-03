@@ -7,6 +7,7 @@ class WebSocketService {
   constructor() {
     this.io = null;
     this.connectedAdmins = new Map(); // Map of adminId to socketId
+    this.public = null; // Public namespace (no auth)
   }
 
   initialize(server) {
@@ -18,6 +19,17 @@ class WebSocketService {
       }
     });
 
+    // Public namespace for customer/mobile apps (no auth required)
+    this.public = this.io.of('/public');
+    this.public.on('connection', (socket) => {
+      // Optionally log connections; keep minimal to avoid noise
+      // console.log('Public client connected');
+      socket.on('disconnect', () => {
+        // console.log('Public client disconnected');
+      });
+    });
+
+    // Default namespace reserved for admin dashboard; requires admin auth
     this.io.use(this.authenticateAdmin.bind(this));
     this.io.on('connection', this.handleConnection.bind(this));
     
@@ -162,7 +174,7 @@ class WebSocketService {
 
   // Broadcast featured offers update to all connected clients
   broadcastFeaturedOffersUpdate(offers) {
-    if (!this.io) return;
+    if (!this.public) return;
 
     const offersData = {
       type: 'featured_offers_update',
@@ -172,14 +184,14 @@ class WebSocketService {
       }
     };
 
-    // Broadcast to all connected clients (public)
-    this.io.emit('featured_offers_update', offersData);
+    // Broadcast to all connected public clients
+    this.public.emit('featured_offers_update', offersData);
     console.log(`Broadcasted featured offers update: ${offers.length} offers`);
   }
 
   // Broadcast new offer to all connected clients
   broadcastNewOffer(offer) {
-    if (!this.io) return;
+    if (!this.public) return;
 
     const offerData = {
       type: 'new_offer',
@@ -189,14 +201,14 @@ class WebSocketService {
       }
     };
 
-    // Broadcast to all connected clients (public)
-    this.io.emit('new_offer', offerData);
+    // Broadcast to all connected public clients
+    this.public.emit('new_offer', offerData);
     console.log(`Broadcasted new offer: ${offer.title}`);
   }
 
   // Broadcast offer update to all connected clients
   broadcastOfferUpdate(offer) {
-    if (!this.io) return;
+    if (!this.public) return;
 
     const offerData = {
       type: 'offer_update',
@@ -206,9 +218,37 @@ class WebSocketService {
       }
     };
 
-    // Broadcast to all connected clients (public)
-    this.io.emit('offer_update', offerData);
+    // Broadcast to all connected public clients
+    this.public.emit('offer_update', offerData);
     console.log(`Broadcasted offer update: ${offer.title}`);
+  }
+
+  // Broadcast new shop to all connected public clients
+  broadcastNewShop(shop) {
+    if (!this.public) return;
+
+    const shopData = {
+      type: 'new_shop',
+      data: {
+        shop: {
+          id: shop._id,
+          name: shop.shopName,
+          address: shop.address,
+          gpsAddress: shop.gpsAddress,
+          state: shop.state,
+          location: shop.location && shop.location.coordinates ? {
+            lng: shop.location.coordinates[0],
+            lat: shop.location.coordinates[1]
+          } : null,
+          rating: shop.rating || 0,
+          isLive: shop.isLive || false
+        },
+        timestamp: new Date().toISOString()
+      }
+    };
+
+    this.public.emit('new_shop', shopData);
+    console.log(`Broadcasted new shop: ${shop.shopName}`);
   }
 
   // Get activity-specific room name
