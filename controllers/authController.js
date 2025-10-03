@@ -3,6 +3,7 @@ const Shop = require('../models/shopModel');
 const authService = require('../services/authService');
 const emailService = require('../services/emailService');
 const { verifyGoogleIdToken } = require('../services/googleAuthService');
+const websocketService = require('../services/websocketService');
 
 exports.register = async (req, res) => {
   try {
@@ -120,6 +121,13 @@ exports.register = async (req, res) => {
       shop = new Shop(shopData);
 
       await shop.save();
+
+      // Broadcast new shop to public clients
+      try {
+        websocketService.broadcastNewShop(shop);
+      } catch (e) {
+        console.error('Failed to broadcast new shop:', e);
+      }
 
       // Link shop to user
       user.shopId = shop._id;

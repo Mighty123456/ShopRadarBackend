@@ -5,6 +5,7 @@ const Offer = require('../models/offerModel');
 const Review = require('../models/reviewModel');
 const emailService = require('../services/emailService');
 const { reverseGeocode, forwardGeocode, computeAddressMatchScore } = require('../services/geocodingService');
+const { expandQueryTerms } = require('../services/searchService');
 const { extractTextFromUrl, extractLicenseDetails } = require('../services/ocrService');
 const { uploadFromUrl } = require('../services/cloudinaryService');
 const { parseExifFromImageUrl } = require('../services/exifService');
@@ -25,12 +26,16 @@ exports.searchShopsPublic = async (req, res) => {
     };
 
     if (q) {
-      const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-      filter.$or = [
-        { shopName: regex },
-        { address: regex },
-        { state: regex }
-      ];
+      const tokens = expandQueryTerms(q);
+      const escapedTokens = tokens.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+      const anyToken = escapedTokens.length ? new RegExp(`(${escapedTokens.join('|')})`, 'i') : null;
+      if (anyToken) {
+        filter.$or = [
+          { shopName: anyToken },
+          { address: anyToken },
+          { state: anyToken }
+        ];
+      }
     }
 
     // Geo filter when lat/lng provided
