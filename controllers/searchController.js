@@ -85,8 +85,8 @@ class SearchController {
       const tokens = expandQueryTerms(q);
       const userLoc = (latitude && longitude) ? { latitude: parseFloat(latitude), longitude: parseFloat(longitude) } : null;
 
-      const shops = await Shop.find({ verificationStatus: 'approved', isActive: true, isLive: true })
-        .select('shopName rating address state location')
+      const shops = await Shop.find({ verificationStatus: 'approved', isActive: true })
+        .select('shopName rating address state location isLive')
         .limit(500);
 
       const results = shops
@@ -109,7 +109,9 @@ class SearchController {
           rating: r.shop.rating,
           address: r.shop.address,
           distanceKm: r.dist,
-          score: r.score
+          score: r.score,
+          isLive: r.shop.isLive,
+          isOpen: r.shop.isLive
         }));
 
       res.json({ success: true, data: { shops: results, total: results.length, tokens } });

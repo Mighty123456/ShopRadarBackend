@@ -21,8 +21,7 @@ exports.searchShopsPublic = async (req, res) => {
 
     const filter = {
       verificationStatus: 'approved',
-      isActive: true,
-      isLive: true
+      isActive: true
     };
 
     if (q) {
@@ -53,14 +52,13 @@ exports.searchShopsPublic = async (req, res) => {
 
     const [shops, total] = await Promise.all([
       Shop.find(filter)
-        .select('shopName address phone location verificationStatus rating reviewCount createdAt')
+        .select('shopName address phone location verificationStatus rating reviewCount createdAt isLive')
         .sort(sortOption)
         .skip(skip)
         .limit(limit),
       Shop.countDocuments({
         verificationStatus: 'approved',
         isActive: true,
-        isLive: true,
         ...(q ? { $or: [ { shopName: new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') }, { address: new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') }, { state: new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') } ] } : {})
       })
     ]);
@@ -104,6 +102,8 @@ exports.searchShopsPublic = async (req, res) => {
         rating: s.rating || 0,
         reviewCount: s.reviewCount || 0,
         offers: offersByShop[s._id.toString()] || [],
+        isLive: s.isLive,
+        isOpen: s.isLive,
         createdAt: s.createdAt
       })),
       pagination: {
@@ -265,7 +265,6 @@ exports.getShopsNearLocation = async (req, res) => {
     const shops = await Shop.find({
       verificationStatus: 'approved',
       isActive: true,
-      isLive: true,
       location: {
         $near: {
           $geometry: {
@@ -277,7 +276,7 @@ exports.getShopsNearLocation = async (req, res) => {
       }
     })
     .populate('ownerId', 'fullName')
-    .select('shopName address phone location verificationStatus rating reviewCount openingHours category description amenities');
+    .select('shopName address phone location verificationStatus rating reviewCount openingHours category description amenities isLive');
     
     // Fetch offers for each shop
     const shopIds = shops.map(s => s._id);
@@ -336,8 +335,8 @@ exports.getShopsNearLocation = async (req, res) => {
         description: shop.description || '',
         amenities: shop.amenities || [],
         offers: offersByShop[shop._id.toString()] || [],
-        isLive: true,
-        isOpen: true, // Assuming all returned shops are open since we filter by isLive
+        isLive: shop.isLive,
+        isOpen: shop.isLive, // Shop is open if it's live
         verificationStatus: shop.verificationStatus,
         owner: shop.ownerId
       };
