@@ -801,10 +801,10 @@ exports.createProductWithOffer = async (req, res) => {
     const { product, offer } = req.body;
     
     // Validate product data
-    if (!product || !product.name || !product.category || !product.price || product.stock === undefined) {
+    if (!product || !product.name || !product.category || !product.brand || !product.itemName || !product.price || product.stock === undefined) {
       return res.status(400).json({
         success: false,
-        message: 'Product name, category, price, and stock are required'
+        message: 'Product name, category, brand, item name, price, and stock are required'
       });
     }
     
@@ -823,6 +823,8 @@ exports.createProductWithOffer = async (req, res) => {
       name: product.name,
       description: product.description || '',
       category: product.category,
+      brand: product.brand,
+      itemName: product.itemName,
       price: product.price,
       stock: product.stock,
       status: 'active'
