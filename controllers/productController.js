@@ -295,7 +295,7 @@ exports.searchProductsWithShopsAndOffers = async (req, res) => {
 
     // Filter products and include shop data
     const filteredProducts = items
-      .filter(p => p.shopId && p.shopId.isActive && p.shopId.isLive && p.shopId.verificationStatus === 'approved')
+      .filter(p => p.shopId && p.shopId.isActive && p.shopId.verificationStatus === 'approved')
       .map(p => ({
         id: p._id,
         name: p.name,
