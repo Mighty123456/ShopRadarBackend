@@ -8,6 +8,23 @@ const productSchema = new mongoose.Schema({
     required: true
   },
   
+  // Hierarchical product structure: Category → Brand → Item
+  category: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  brand: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  itemName: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  
   // Product basic information
   name: {
     type: String,
@@ -16,11 +33,6 @@ const productSchema = new mongoose.Schema({
   },
   description: {
     type: String,
-    trim: true
-  },
-  category: {
-    type: String,
-    required: true,
     trim: true
   },
   price: {
@@ -93,6 +105,8 @@ productSchema.pre('save', function(next) {
 productSchema.index({ shopId: 1 });
 productSchema.index({ status: 1 });
 productSchema.index({ category: 1 });
+productSchema.index({ brand: 1 });
+productSchema.index({ category: 1, brand: 1 });
 productSchema.index({ createdAt: -1 });
 
 module.exports = mongoose.model('Product', productSchema);
