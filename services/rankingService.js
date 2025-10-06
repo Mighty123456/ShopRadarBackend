@@ -141,6 +141,94 @@ class RankingService {
     }
   }
 
+  /**
+   * Simple rule-aligned ranking to mirror frontend visitPriorityScore
+   * Factors: distance, rating, offers, open status (isLive), review count
+   */
+  async rankShopsSimple(userId, userLocation, filters = {}, limit = 20) {
+    try {
+      const candidates = await this.getCandidateShops(userLocation, filters);
+      if (candidates.length === 0) return [];
+
+      const scores = await Promise.all(candidates.map(async (shop) => {
+        const distanceKm = userLocation && shop.location?.coordinates
+          ? this.calculateDistance(userLocation, shop.location.coordinates)
+          : 0;
+
+        // Distance factor
+        let score = 0;
+        if (distanceKm > 0) {
+          if (distanceKm < 1.0) score += 40.0;
+          else if (distanceKm < 5.0) score += 30.0;
+          else if (distanceKm < 10.0) score += 20.0;
+          else if (distanceKm < 20.0) score += 10.0;
+          else score += 5.0;
+        } else {
+          score += 15.0;
+        }
+
+        // Rating factor (max 25)
+        const rating = Number(shop.rating || 0);
+        score += (Math.max(0, Math.min(rating, 5)) / 5.0) * 25.0;
+
+        // Offers factor: +15 baseline if any active offer, plus up to +10 for best percent
+        let bestDiscount = 0;
+        try {
+          const now = new Date();
+          const offers = await Offer.find({
+            shopId: shop._id,
+            status: 'active',
+            startDate: { $lte: now },
+            endDate: { $gte: now }
+          }).select('discountType discountValue');
+          if (offers && offers.length > 0) {
+            score += 15.0;
+            for (const off of offers) {
+              if (String(off.discountType).toLowerCase() === 'percentage') {
+                bestDiscount = Math.max(bestDiscount, Number(off.discountValue || 0));
+              }
+            }
+            score += (Math.max(0, Math.min(bestDiscount, 100)) / 100.0) * 10.0;
+          }
+        } catch (_) { /* ignore offer failures */ }
+
+        // Open/Live status factor
+        if (shop.isLive === true) {
+          score += 10.0;
+        }
+
+        // Review count factor (max 5)
+        const reviewCount = Number(shop.reviewCount || 0);
+        score += Math.max(0, Math.min(reviewCount / 100.0, 5.0));
+
+        // Provide reason tags similar to frontend
+        const reasons = [];
+        if (distanceKm > 0 && distanceKm < 1.0) reasons.push('Very close');
+        else if (distanceKm > 0 && distanceKm < 5.0) reasons.push('Close by');
+        if (rating >= 4.0) reasons.push('Highly rated');
+        else if (rating >= 3.0) reasons.push('Good rating');
+        if (bestDiscount > 0) reasons.push('Has offers');
+        if (shop.isLive === true) reasons.push('Open now');
+        if (reviewCount > 10) reasons.push('Popular');
+
+        return { shop, score, reasons: reasons.length ? reasons.join(' • ') : 'Available' };
+      }));
+
+      return scores
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit)
+        .map(({ shop, score, reasons }) => ({
+          ...shop.toObject(),
+          rankingScore: score,
+          rankingReason: reasons,
+          algorithm: 'visit_priority_score'
+        }));
+    } catch (error) {
+      console.error('Error in rankShopsSimple:', error);
+      return [];
+    }
+  }
+
   // ===== CANDIDATE GENERATION =====
 
   /**
