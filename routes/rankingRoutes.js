@@ -16,6 +16,8 @@ router.use(authMiddleware);
  * @query latitude, longitude, category, minRating, maxDistance, limit
  */
 router.get('/shops', RankingController.rankShops);
+// Simple rule-aligned variant (mirrors frontend visitPriorityScore)
+router.get('/shops-simple', RankingController.rankShopsSimple);
 
 /**
  * @route GET /api/ranking/offers

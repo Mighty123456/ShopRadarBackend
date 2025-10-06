@@ -74,6 +74,55 @@ class RankingController {
   }
 
   /**
+   * Rank shops using simple rule-aligned algorithm (mirrors frontend visitPriorityScore)
+   */
+  async rankShopsSimple(req, res) {
+    try {
+      const { userId } = req.user;
+      const { 
+        latitude, 
+        longitude, 
+        category, 
+        minRating, 
+        maxDistance = 10,
+        limit = 20 
+      } = req.query;
+
+      if (!latitude || !longitude) {
+        return res.status(400).json({ success: false, message: 'Latitude and longitude are required' });
+      }
+
+      const userLocation = { latitude: parseFloat(latitude), longitude: parseFloat(longitude) };
+      const filters = {
+        category,
+        minRating: minRating ? parseFloat(minRating) : undefined,
+        maxDistance: parseFloat(maxDistance)
+      };
+
+      const rankedShops = await RankingService.rankShopsSimple(
+        userId, userLocation, filters, parseInt(limit)
+      );
+
+      return res.json({
+        success: true,
+        data: {
+          shops: rankedShops,
+          total: rankedShops.length,
+          filters,
+          rankingInfo: {
+            algorithm: 'visit_priority_score',
+            features: ['distance', 'rating', 'offers', 'open', 'reviews'],
+            timestamp: new Date()
+          }
+        }
+      });
+    } catch (error) {
+      console.error('Error in rankShopsSimple:', error);
+      return res.status(500).json({ success: false, message: 'Error ranking shops (simple)', error: error.message });
+    }
+  }
+
+  /**
    * Rank offers with advanced ML-based ranking
    */
   async rankOffers(req, res) {
