@@ -29,9 +29,9 @@ class EmailService {
           user: emailUser,
           pass: emailPassword
         },
-        connectionTimeout: 30000,
-        greetingTimeout: 20000,
-        socketTimeout: 30000,
+        connectionTimeout: 60000,
+        greetingTimeout: 30000,
+        socketTimeout: 60000,
         pool: true,
         maxConnections: 1,
         maxMessages: 5,
@@ -51,9 +51,9 @@ class EmailService {
           user: emailUser,
           pass: emailPassword
         },
-        connectionTimeout: 30000,
-        greetingTimeout: 20000,
-        socketTimeout: 30000,
+        connectionTimeout: 60000,
+        greetingTimeout: 30000,
+        socketTimeout: 60000,
         pool: true,
         maxConnections: 1,
         maxMessages: 5,
@@ -89,9 +89,9 @@ class EmailService {
         user: emailUser,
         pass: emailPassword
       },
-      connectionTimeout: 20000,
-      greetingTimeout: 15000,
-      socketTimeout: 25000,
+      connectionTimeout: 45000,
+      greetingTimeout: 25000,
+      socketTimeout: 45000,
       pool: true,
       maxConnections: 1,
       maxMessages: 5,
@@ -103,27 +103,46 @@ class EmailService {
   }
 
   async _sendWithRetry(mailOptions, purposeLabel) {
-    try {
-      await this.transporter.sendMail(mailOptions);
-      console.log(`${purposeLabel} sent to ${mailOptions.to}`);
-      return true;
-    } catch (error) {
-      console.error(`Failed to send ${purposeLabel}: ${error.message}`);
-      if (/timeout|ETIMEDOUT|ECONNRESET|ECONNREFUSED|EAI_AGAIN/i.test(error.message)) {
-        const alt = this._buildAltGmailTransport();
-        if (alt) {
-          try {
-            console.warn(`Retrying ${purposeLabel} with alternative Gmail SMTP settings...`);
-            await alt.sendMail(mailOptions);
-            console.log(`${purposeLabel} sent to ${mailOptions.to} on retry`);
-            return true;
-          } catch (retryErr) {
-            console.error(`Retry failed for ${purposeLabel}: ${retryErr.message}`);
+    const maxRetries = 3;
+    let lastError;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`Attempting to send ${purposeLabel} (attempt ${attempt}/${maxRetries})...`);
+        await this.transporter.sendMail(mailOptions);
+        console.log(`✅ ${purposeLabel} sent successfully to ${mailOptions.to}`);
+        return true;
+      } catch (error) {
+        lastError = error;
+        console.error(`❌ Attempt ${attempt} failed for ${purposeLabel}: ${error.message}`);
+        
+        // If it's a timeout/connection error and we have retries left, try alternative transport
+        if (attempt < maxRetries && /timeout|ETIMEDOUT|ECONNRESET|ECONNREFUSED|EAI_AGAIN/i.test(error.message)) {
+          const alt = this._buildAltGmailTransport();
+          if (alt) {
+            try {
+              console.warn(`🔄 Retrying ${purposeLabel} with alternative Gmail SMTP settings (attempt ${attempt + 1}/${maxRetries})...`);
+              await alt.sendMail(mailOptions);
+              console.log(`✅ ${purposeLabel} sent successfully to ${mailOptions.to} on retry`);
+              return true;
+            } catch (retryError) {
+              console.error(`❌ Alternative transport retry failed for ${purposeLabel}: ${retryError.message}`);
+              lastError = retryError;
+            }
           }
         }
+        
+        // Wait before next retry (exponential backoff)
+        if (attempt < maxRetries) {
+          const waitTime = Math.min(1000 * Math.pow(2, attempt - 1), 10000); // Max 10 seconds
+          console.log(`⏳ Waiting ${waitTime}ms before retry...`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+        }
       }
-      return false;
     }
+    
+    console.error(`❌ All ${maxRetries} attempts failed for ${purposeLabel}. Last error: ${lastError?.message}`);
+    return false;
   }
 
   generateOTP() {
