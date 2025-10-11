@@ -108,7 +108,6 @@ reviewSchema.post('findOneAndUpdate', async function(doc) {
 });
 
 // Index for efficient querying
-// Removed standalone userId index to avoid duplicate key warnings when combined with compound index
 reviewSchema.index({ shopId: 1 });
 reviewSchema.index({ status: 1 });
 reviewSchema.index({ createdAt: -1 });

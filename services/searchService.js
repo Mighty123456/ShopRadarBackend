@@ -89,5 +89,3 @@ module.exports = {
   expandQueryTerms,
   computeProductRelevance,
 };
-
-
