@@ -138,6 +138,26 @@ const shopSchema = new mongoose.Schema({
     default: false 
   },
   
+  // Business information
+  category: { 
+    type: String, 
+    default: 'Other',
+    trim: true
+  },
+  description: { 
+    type: String, 
+    trim: true
+  },
+  openingHours: { 
+    type: String, 
+    default: 'Mon-Sun: 9:00 AM - 9:00 PM',
+    trim: true
+  },
+  amenities: [{ 
+    type: String, 
+    trim: true 
+  }],
+  
   // Rating and review fields
   rating: { 
     type: Number, 
