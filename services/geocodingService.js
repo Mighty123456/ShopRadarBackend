@@ -1,5 +1,3 @@
-const fetch = require('node-fetch');
-
 // Google Geocoding API
 // Requires env: GOOGLE_MAPS_API_KEY
 
@@ -16,6 +14,7 @@ async function reverseGeocode(latitude, longitude) {
     return null;
   }
   const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${encodeURIComponent(latitude)},${encodeURIComponent(longitude)}&key=${encodeURIComponent(apiKey)}`;
+  const { default: fetch } = await import('node-fetch');
   const resp = await fetch(url);
   if (!resp.ok) {
     throw new Error(`Reverse geocoding failed with status ${resp.status}`);
@@ -48,6 +47,7 @@ async function forwardGeocode(address) {
   }
   const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address.trim())}&key=${encodeURIComponent(apiKey)}`;
   try {
+    const { default: fetch } = await import('node-fetch');
     const resp = await fetch(url);
     if (!resp.ok) {
       throw new Error(`Forward geocoding failed with status ${resp.status}`);
