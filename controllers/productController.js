@@ -619,6 +619,8 @@ exports.getMyProducts = async (req, res) => {
       name: product.name,
       description: product.description,
       category: product.category,
+      brand: product.brand,
+      itemName: product.itemName,
       price: product.price,
       stock: product.stock,
       status: product.status,
