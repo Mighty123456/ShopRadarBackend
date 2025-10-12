@@ -71,6 +71,21 @@ app.use('/api/search', searchRoutes);
 app.use('/api/ranking', rankingRoutes);
 app.use('/api/categories', categoryRoutes);
 
+app.get('/', (req, res) => {
+  res.json({ 
+    status: 'OK', 
+    message: 'ShopRadar API is running',
+    version: '1.0.0',
+    endpoints: {
+      health: '/health',
+      auth: '/api/auth',
+      shops: '/api/shops',
+      products: '/api/products',
+      users: '/api/users'
+    }
+  });
+});
+
 app.get('/health', (req, res) => {
   res.json({ status: 'OK', message: 'ShopRadar API is running' });
 });
@@ -86,13 +101,19 @@ app.use((req, res) => {
 
 const PORT = process.env.PORT || 3000;
 
-// Create HTTP server
-const server = http.createServer(app);
+// For Vercel serverless deployment
+if (process.env.VERCEL) {
+  // Export the app for Vercel
+  module.exports = app;
+} else {
+  // Create HTTP server for local development
+  const server = http.createServer(app);
 
-// Initialize WebSocket service
-websocketService.initialize(server);
+  // Initialize WebSocket service
+  websocketService.initialize(server);
 
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(`WebSocket server initialized`);
-}); 
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on port ${PORT}`);
+    console.log(`WebSocket server initialized`);
+  });
+} 
