@@ -1,7 +1,7 @@
-const fetch = require('node-fetch');
 const ExifReader = require('exifreader');
 
 async function parseExifFromImageUrl(url) {
+  const { default: fetch } = await import('node-fetch');
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`Failed to fetch image: ${resp.status}`);
   const arrayBuffer = await resp.arrayBuffer();
