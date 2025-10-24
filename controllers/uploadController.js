@@ -1,7 +1,7 @@
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs').promises;
-const { uploadFromUrl, uploadBuffer } = require('../services/cloudinaryService');
+const { uploadFromUrl, uploadBuffer, isCloudinaryConfigured } = require('../services/cloudinaryService');
 
 // Configure multer for file uploads
 const upload = multer();
@@ -75,29 +75,63 @@ async function uploadHandler(req, res) {
     if (req.body && req.body.url) {
       console.log('Processing URL upload');
       const folder = req.query.folder || 'shop-docs';
-      const result = await uploadFromUrl(req.body.url, folder);
-      return res.json(result);
+      
+      if (isCloudinaryConfigured()) {
+        try {
+          const result = await uploadFromUrl(req.body.url, folder);
+          return res.json(result);
+        } catch (cloudinaryError) {
+          console.warn('Cloudinary URL upload failed:', cloudinaryError.message);
+          return res.status(500).json({ message: 'URL upload failed - Cloudinary not configured' });
+        }
+      } else {
+        return res.status(500).json({ message: 'URL upload not supported - Cloudinary not configured' });
+      }
     }
     if (req.file && req.file.buffer) {
       console.log('Processing file upload');
       const folder = req.query.folder || 'shop-docs';
       
-      // Save to Cloudinary
-      console.log('Uploading to Cloudinary...');
-      const cloudinaryResult = await uploadBuffer(req.file.buffer, folder, req.file.originalname);
-      console.log('Cloudinary result:', cloudinaryResult);
+      let cloudinaryResult = null;
+      let localResult = null;
       
-      // Save locally
-      console.log('Saving locally...');
-      const localResult = await saveFileLocally(req.file.buffer, req.file.originalname, folder);
-      console.log('Local result:', localResult);
+      // Try to save to Cloudinary first (if credentials are available)
+      if (isCloudinaryConfigured()) {
+        try {
+          console.log('Uploading to Cloudinary...');
+          cloudinaryResult = await uploadBuffer(req.file.buffer, folder, req.file.originalname);
+          console.log('Cloudinary result:', cloudinaryResult);
+        } catch (cloudinaryError) {
+          console.warn('Cloudinary upload failed:', cloudinaryError.message);
+          console.log('Continuing with local storage only...');
+        }
+      } else {
+        console.log('Cloudinary not configured, using local storage only...');
+      }
       
-      // Return both results
-      const finalResult = {
+      // Always save locally as fallback
+      try {
+        console.log('Saving locally...');
+        localResult = await saveFileLocally(req.file.buffer, req.file.originalname, folder);
+        console.log('Local result:', localResult);
+      } catch (localError) {
+        console.error('Local save failed:', localError);
+        throw new Error('Both Cloudinary and local storage failed');
+      }
+      
+      // Return results (prioritize Cloudinary if available, otherwise use local)
+      const finalResult = cloudinaryResult ? {
         ...cloudinaryResult,
         localPath: localResult.localPath,
         localFilename: localResult.filename
+      } : {
+        url: `/api/upload/local/${folder}/${localResult.filename}`,
+        publicId: localResult.filename,
+        mimeType: req.file.mimetype || 'application/octet-stream',
+        localPath: localResult.localPath,
+        localFilename: localResult.filename
       };
+      
       console.log('Final result:', finalResult);
       return res.json(finalResult);
     }
