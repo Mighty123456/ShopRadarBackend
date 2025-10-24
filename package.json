@@ -20,7 +20,7 @@
   "dependencies": {
     "axios": "^1.11.0",
     "bcryptjs": "^2.4.3",
-    "cloudinary": "^1.41.3",
+    "cloudinary": "^2.5.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "exifreader": "^4.23.5",
@@ -34,7 +34,7 @@
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
     "socket.io": "^4.8.1",
-    "tesseract.js": "^6.0.1",
+    "tesseract.js": "^5.1.0",
     "ml-matrix": "^6.10.4",
     "natural": "^6.7.0",
     "compromise": "^14.10.0",
@@ -56,11 +56,17 @@
     "socket.io-adapter": "^2.5.5",
     "socket.io-parser": "^4.2.4",
     "mquery": "^5.0.0",
-    "router": "^2.2.0"
+    "router": "^2.2.0",
+    "q": "^1.5.1",
+    "node-domexception": "^2.0.0"
   },
   "engines": {
-    "node": ">=20.0.0",
+    "node": "20.x",
     "npm": ">=10.0.0"
+  },
+  "resolutions": {
+    "q": "^1.5.1",
+    "node-domexception": "^2.0.0"
   }
 }
 
