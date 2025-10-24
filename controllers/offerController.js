@@ -536,7 +536,7 @@ exports.getAllOffers = async (req, res) => {
 exports.getFeaturedOffers = async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 10;
-    const { latitude, longitude, radius = 10000 } = req.query; // radius in meters
+    const { latitude, longitude, radius = 8000 } = req.query; // radius in meters, default 8km
 
     // Build filter for active offers
     const filter = {

@@ -64,6 +64,14 @@ async function uploadHandler(req, res) {
       bufferLength: req.file.buffer.length 
     } : 'No file');
     
+    // Validate file size (max 10MB for Vercel compatibility)
+    if (req.file && req.file.size > 10 * 1024 * 1024) {
+      return res.status(400).json({ 
+        message: 'File size too large. Maximum size is 10MB.',
+        maxSize: '10MB'
+      });
+    }
+    
     if (req.body && req.body.url) {
       console.log('Processing URL upload');
       const folder = req.query.folder || 'shop-docs';
