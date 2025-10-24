@@ -47,14 +47,25 @@ app.use(passport.session());
 // Update lastActive for authenticated users
 app.use(updateLastActive);
 
-mongoose.connect(config.mongoURI)
-  .then(() => {
+// Validate Mongo URI early and connect before starting server
+if (!config.mongoURI) {
+  console.error('MongoDB connection error: MONGODB_URI is not set in environment');
+  process.exit(1);
+}
+
+const connectToMongo = async () => {
+  try {
+    await mongoose.connect(config.mongoURI, {
+      serverSelectionTimeoutMS: 10000,
+      socketTimeoutMS: 20000
+    });
     console.log('MongoDB connected');
     console.log('Database name:', mongoose.connection.name);
-  })
-  .catch((err) => {
+  } catch (err) {
     console.error('MongoDB connection error:', err);
-  });
+    process.exit(1);
+  }
+};
 
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
@@ -106,14 +117,18 @@ if (process.env.VERCEL) {
   // Export the app for Vercel
   module.exports = app;
 } else {
-  // Create HTTP server for local development
-  const server = http.createServer(app);
+  // Create HTTP server for local development, after DB connects
+  (async () => {
+    await connectToMongo();
 
-  // Initialize WebSocket service
-  websocketService.initialize(server);
+    const server = http.createServer(app);
 
-  server.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on port ${PORT}`);
-    console.log(`WebSocket server initialized`);
-  });
+    // Initialize WebSocket service
+    websocketService.initialize(server);
+
+    server.listen(PORT, '0.0.0.0', () => {
+      console.log(`Server running on port ${PORT}`);
+      console.log(`WebSocket server initialized`);
+    });
+  })();
 } 

@@ -175,6 +175,11 @@ exports.getShopById = async (req, res) => {
 exports.verifyShop = async (req, res) => {
   try {
     const { id } = req.params;
+    // Validate ObjectId to avoid CastError 500s
+    const mongoose = require('mongoose');
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid shop ID' });
+    }
     const { status, notes } = req.body; // status: 'approved' or 'rejected'
     
     if (!['approved', 'rejected'].includes(status)) {
@@ -190,24 +195,26 @@ exports.verifyShop = async (req, res) => {
       return res.status(400).json({ message: 'Shop has already been verified' });
     }
     
-    // Update shop verification status
-    shop.verificationStatus = status;
-    shop.verificationNotes = notes;
-    shop.verifiedAt = new Date();
-    shop.verifiedBy = req.admin.id; // Admin who verified
-    
+    // Build update object and persist without triggering full validators
+    const update = {
+      verificationStatus: status,
+      verificationNotes: notes,
+      verifiedAt: new Date(),
+      verifiedBy: req.admin.id
+    };
     if (status === 'approved') {
-      shop.isActive = true;
-      // Lock location if GPS and checks were done
+      update.isActive = true;
+      update.verifiedBadge = true;
+      update.isLive = true;
       if (!shop.isLocationLocked && shop.location && Array.isArray(shop.location.coordinates)) {
-        shop.locationLock = shop.location;
-        shop.isLocationLocked = true;
+        update.locationLock = shop.location;
+        update.isLocationLocked = true;
       }
-      shop.verifiedBadge = true;
-      shop.isLive = true;
     }
-    
-    await shop.save();
+
+    await Shop.updateOne({ _id: id }, { $set: update }, { runValidators: false });
+    // Reflect updated fields on the in-memory shop instance for downstream usage
+    Object.assign(shop, update);
     
     // Update user's shop status
     const user = await User.findById(shop.ownerId);
@@ -217,31 +224,37 @@ exports.verifyShop = async (req, res) => {
     
     // Send email notification to shop owner
     try {
-      const emailSent = await emailService.sendShopVerificationNotification(
-        user.email,
-        shop.shopName,
-        status,
-        notes
-      );
-      
-      if (!emailSent) {
-        console.log(`Failed to send verification email to ${user.email}`);
+      if (user && user.email) {
+        const emailSent = await emailService.sendShopVerificationNotification(
+          user.email,
+          shop.shopName,
+          status,
+          notes
+        );
+        
+        if (!emailSent) {
+          console.log(`Failed to send verification email to ${user.email}`);
+        } else {
+          console.log(`Verification email sent to ${user.email} for shop ${shop.shopName}`);
+        }
       } else {
-        console.log(`Verification email sent to ${user.email} for shop ${shop.shopName}`);
+        console.log('Skipping verification email: owner record or email missing');
       }
     } catch (emailError) {
       console.error('Error sending verification email:', emailError);
       // Don't fail the verification if email fails
     }
     
+    // Re-fetch updated shop to ensure response consistency
+    const refreshed = await Shop.findById(id).select('shopName verificationStatus verificationNotes verifiedAt');
     res.json({ 
       message: `Shop ${status} successfully`,
       shop: {
-        _id: shop._id,
-        shopName: shop.shopName,
-        verificationStatus: shop.verificationStatus,
-        verificationNotes: shop.verificationNotes,
-        verifiedAt: shop.verifiedAt
+        _id: refreshed?._id || shop._id,
+        shopName: refreshed?.shopName || shop.shopName,
+        verificationStatus: refreshed?.verificationStatus || shop.verificationStatus,
+        verificationNotes: refreshed?.verificationNotes || shop.verificationNotes,
+        verifiedAt: refreshed?.verifiedAt || shop.verifiedAt
       }
     });
   } catch (err) {
