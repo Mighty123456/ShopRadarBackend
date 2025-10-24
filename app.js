@@ -55,6 +55,11 @@ if (!config.mongoURI) {
 
 const connectToMongo = async () => {
   try {
+    // Check if already connected
+    if (mongoose.connection.readyState === 1) {
+      return;
+    }
+    
     await mongoose.connect(config.mongoURI, {
       serverSelectionTimeoutMS: 10000,
       socketTimeoutMS: 20000
@@ -63,9 +68,20 @@ const connectToMongo = async () => {
     console.log('Database name:', mongoose.connection.name);
   } catch (err) {
     console.error('MongoDB connection error:', err);
-    process.exit(1);
+    throw err;
   }
 };
+
+// Connect to MongoDB on each request (for serverless)
+app.use(async (req, res, next) => {
+  try {
+    await connectToMongo();
+    next();
+  } catch (err) {
+    console.error('Database connection failed:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
 
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
