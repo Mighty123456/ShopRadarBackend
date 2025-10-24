@@ -11,7 +11,15 @@ function configure() {
   }
 }
 
+function isCloudinaryConfigured() {
+  const { CLOUDINARY_URL, CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET } = process.env;
+  return !!(CLOUDINARY_URL || (CLOUDINARY_CLOUD_NAME && CLOUDINARY_API_KEY && CLOUDINARY_API_SECRET));
+}
+
 async function uploadFromUrl(url, folder) {
+  if (!isCloudinaryConfigured()) {
+    throw new Error('Cloudinary credentials are not configured');
+  }
   configure();
   const res = await cloudinary.uploader.upload(url, { 
     folder,
@@ -41,6 +49,9 @@ async function uploadFromUrl(url, folder) {
 }
 
 async function uploadBuffer(buffer, folder, filename) {
+  if (!isCloudinaryConfigured()) {
+    throw new Error('Cloudinary credentials are not configured');
+  }
   configure();
   return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream({ 
@@ -75,6 +86,6 @@ async function uploadBuffer(buffer, folder, filename) {
   });
 }
 
-module.exports = { uploadFromUrl, uploadBuffer };
+module.exports = { uploadFromUrl, uploadBuffer, isCloudinaryConfigured };
 
 
