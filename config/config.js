@@ -1,5 +1,11 @@
 const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
+
+// Load environment variables
+// In Vercel, environment variables are automatically available
+// Only load .env file if we're in development
+if (process.env.NODE_ENV !== 'production') {
+  require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
+}
 
 module.exports = {
   mongoURI: process.env.MONGODB_URI,

@@ -97,6 +97,17 @@ app.get('/', (req, res) => {
   });
 });
 
+// Debug endpoint to check environment variables (remove in production)
+app.get('/debug/env', (req, res) => {
+  res.json({
+    nodeEnv: process.env.NODE_ENV,
+    hasMongoURI: !!process.env.MONGODB_URI,
+    hasJwtSecret: !!process.env.JWT_SECRET,
+    hasEmailUser: !!process.env.EMAIL_USER,
+    mongoURILength: process.env.MONGODB_URI ? process.env.MONGODB_URI.length : 0
+  });
+});
+
 app.get('/health', (req, res) => {
   res.json({ status: 'OK', message: 'ShopRadar API is running' });
 });
