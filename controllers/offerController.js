@@ -633,6 +633,13 @@ exports.getFeaturedOffers = async (req, res) => {
 exports.getShopOffers = async (req, res) => {
   try {
     const { shopId } = req.params;
+    const mongoose = require('mongoose');
+    if (!mongoose.Types.ObjectId.isValid(shopId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid shopId: must be a 24-character hexadecimal string.'
+      });
+    }
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
