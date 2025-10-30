@@ -119,6 +119,16 @@ exports.searchShopsPublic = async (req, res) => {
   }
 };
 
+// Public: Get all approved & active shops (used in GET /)
+exports.getShops = async (req, res) => {
+  try {
+    const shops = await Shop.find({ verificationStatus: 'approved', isActive: true });
+    res.json({ success: true, data: shops });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Error fetching shops' });
+  }
+};
+
 // Get all shops for admin review
 exports.getAllShops = async (req, res) => {
   try {
