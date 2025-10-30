@@ -476,40 +476,43 @@ exports.getMyShop = async (req, res) => {
 exports.updateMyShop = async (req, res) => {
   try {
     const { 
-      shopName, 
-      phone, 
-      address, 
+      shopName,
+      phone,
+      address,
       gpsAddress,
-      location 
+      location,
+      description,
+      category,
+      openingHours,
+      amenities,
     } = req.body;
-    
+
     const shop = await Shop.findOne({ ownerId: req.user.id });
     if (!shop) {
-      return res.status(404).json({ 
-        message: 'No shop found for this user' 
-      });
+      return res.status(404).json({ message: 'No shop found for this user' });
     }
-    
-    // Allow updates before approval only for certain fields if needed; keep as-is for now
-    
+
     // Update allowed fields
     if (shopName) shop.shopName = shopName;
     if (phone) shop.phone = phone;
     if (address) shop.address = address;
     if (gpsAddress) shop.gpsAddress = gpsAddress;
-    
-    // Update location if provided
+    if (description) shop.description = description;
+    if (category) shop.category = category;
+    if (openingHours) shop.openingHours = openingHours;
+    if (Array.isArray(amenities)) shop.amenities = amenities;
+
     if (location && location.latitude && location.longitude) {
       shop.location = {
         type: 'Point',
         coordinates: [location.longitude, location.latitude]
       };
-      shop.isLocationVerified = false; // Reset verification when location changes
+      shop.isLocationVerified = false; // Optional: Reset verification if moved
     }
-    
+
     await shop.save();
-    
-    res.json({ 
+
+    res.json({
       message: 'Shop details updated successfully',
       shop: {
         _id: shop._id,
@@ -517,11 +520,15 @@ exports.updateMyShop = async (req, res) => {
         phone: shop.phone,
         address: shop.address,
         gpsAddress: shop.gpsAddress,
+        description: shop.description,
+        category: shop.category,
+        openingHours: shop.openingHours,
+        amenities: shop.amenities,
         location: shop.location,
         isLocationVerified: shop.isLocationVerified,
         verificationStatus: shop.verificationStatus,
         isActive: shop.isActive,
-        isLive: shop.isLive
+        isLive: shop.isLive,
       }
     });
   } catch (err) {
