@@ -493,14 +493,14 @@ exports.updateMyShop = async (req, res) => {
     }
 
     // Update allowed fields
-    if (shopName) shop.shopName = shopName;
-    if (phone) shop.phone = phone;
-    if (address) shop.address = address;
-    if (gpsAddress) shop.gpsAddress = gpsAddress;
-    if (description) shop.description = description;
-    if (category) shop.category = category;
-    if (openingHours) shop.openingHours = openingHours;
-    if (Array.isArray(amenities)) shop.amenities = amenities;
+    if (typeof shopName !== 'undefined') shop.shopName = shopName;
+    if (typeof phone !== 'undefined') shop.phone = phone;
+    if (typeof address !== 'undefined') shop.address = address;
+    if (typeof gpsAddress !== 'undefined') shop.gpsAddress = gpsAddress;
+    if (typeof description !== 'undefined') shop.description = description;
+    if (typeof category !== 'undefined') shop.category = category;
+    if (typeof openingHours !== 'undefined') shop.openingHours = openingHours;
+    if (typeof amenities !== 'undefined' && Array.isArray(amenities)) shop.amenities = amenities;
 
     if (location && location.latitude && location.longitude) {
       shop.location = {
