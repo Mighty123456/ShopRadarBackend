@@ -3,7 +3,10 @@ const router = express.Router();
 const categoryController = require('../controllers/categoryController');
 const authMiddleware = require('../middleware/authMiddleware');
 
-// Apply authentication middleware to all routes
+// Public route: Get popular categories
+router.get('/popular', categoryController.getPopularCategories);
+
+// Apply authentication middleware to all routes after this point
 router.use(authMiddleware);
 
 // Category routes

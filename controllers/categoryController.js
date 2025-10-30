@@ -326,3 +326,19 @@ exports.getCategoryHierarchy = async (req, res) => {
     });
   }
 };
+
+// Public: Get top 10 popular categories by product count
+exports.getPopularCategories = async (req, res) => {
+  try {
+    // Aggregate top categories from Product
+    const topCategories = await require('../models/productModel').aggregate([
+      { $group: { _id: '$category', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 10 }
+    ]);
+    res.json({ success: true, data: topCategories });
+  } catch (e) {
+    console.error('Fetch popular categories error:', e);
+    res.status(500).json({ success: false, message: 'Failed to fetch popular categories' });
+  }
+};
