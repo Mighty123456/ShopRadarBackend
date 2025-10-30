@@ -536,7 +536,7 @@ exports.getAllOffers = async (req, res) => {
 exports.getFeaturedOffers = async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 10;
-    // const { latitude, longitude, radius = 8000 } = req.query; // radius in meters, default 8km
+    const { latitude, longitude, radius = 8000 } = req.query; // Enable geo filtering by default
 
     // Build filter for active offers
     const filter = {
@@ -545,13 +545,31 @@ exports.getFeaturedOffers = async (req, res) => {
       endDate: { $gte: new Date() }
     };
 
-    // TEMPORARY DEBUG: ignore location filtering, fetch from all approved/active/live shops
-    const shops = await Shop.find({
-      verificationStatus: 'approved',
-      isActive: true,
-      isLive: true
-    }).select('_id');
-    const shopIds = shops.map(shop => shop._id);
+    let shopIds = [];
+
+    if (latitude && longitude) {
+      // Only fetch shops within the radius
+      const shops = await Shop.find({
+        verificationStatus: 'approved',
+        isActive: true,
+        isLive: true,
+        location: {
+          $near: {
+            $geometry: { type: 'Point', coordinates: [parseFloat(longitude), parseFloat(latitude)] },
+            $maxDistance: parseInt(radius)
+          }
+        }
+      }).select('_id');
+      shopIds = shops.map(shop => shop._id);
+    } else {
+      // All live/active/approved shops
+      const shops = await Shop.find({
+        verificationStatus: 'approved',
+        isActive: true,
+        isLive: true
+      }).select('_id');
+      shopIds = shops.map(shop => shop._id);
+    }
     filter.shopId = { $in: shopIds };
 
     // Get featured offers with shop and product details
@@ -602,7 +620,6 @@ exports.getFeaturedOffers = async (req, res) => {
         timestamp: new Date().toISOString()
       }
     });
-
   } catch (error) {
     console.error('Get featured offers error:', error);
     res.status(500).json({
