@@ -8,6 +8,7 @@ const shopOwnershipMiddleware = require('../middleware/shopOwnershipMiddleware')
 const requireApprovedShop = require('../middleware/requireApprovedShop');
 
 // Public routes (for customers)
+router.get('/', shopController.getShops);
 router.get('/nearby', shopController.getShopsNearLocation);
 router.get('/search', shopController.searchShopsPublic);
 

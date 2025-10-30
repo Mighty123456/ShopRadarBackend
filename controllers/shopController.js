@@ -266,7 +266,7 @@ exports.verifyShop = async (req, res) => {
 // Get shops near a location (for customers)
 exports.getShopsNearLocation = async (req, res) => {
   try {
-    const { latitude, longitude, radius = 5000 } = req.query; // radius in meters
+    const { latitude, longitude, radius = 5000, category } = req.query; // use 5km default
     
     if (!latitude || !longitude) {
       return res.status(400).json({ message: 'Latitude and longitude are required' });
@@ -275,21 +275,26 @@ exports.getShopsNearLocation = async (req, res) => {
     const userLat = parseFloat(latitude);
     const userLon = parseFloat(longitude);
     
-    const shops = await Shop.find({
+    const filter = {
       verificationStatus: 'approved',
       isActive: true,
+      isLive: true,
       location: {
         $near: {
           $geometry: {
             type: 'Point',
-            coordinates: [userLon, userLat]
+            coordinates: [parseFloat(longitude), parseFloat(latitude)],
           },
-          $maxDistance: parseInt(radius)
-        }
-      }
-    })
-    .populate('ownerId', 'fullName')
-    .select('shopName address phone location verificationStatus rating reviewCount openingHours category description amenities isLive');
+          $maxDistance: parseInt(radius),
+        },
+      },
+    };
+    if (category && category !== 'All') {
+      filter.category = category;
+    }
+    const shops = await Shop.find(filter)
+      .populate('ownerId', 'fullName')
+      .select('shopName address phone location verificationStatus rating reviewCount openingHours category description amenities isLive');
     
     // Fetch offers for each shop
     const shopIds = shops.map(s => s._id);
@@ -356,8 +361,7 @@ exports.getShopsNearLocation = async (req, res) => {
     });
     
     res.json({ shops: shopsWithDistance });
-  } catch (err) {
-    console.error('Get shops near location error:', err);
+  } catch (e) {
     res.status(500).json({ message: 'Server error' });
   }
 };
