@@ -550,6 +550,58 @@ exports.getShopReviews = async (req, res) => {
   }
 };
 
+// Get user's own reviews
+exports.getMyReviews = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    // Get reviews for the user
+    const reviews = await Review.find({ userId, status: 'active' })
+      .populate('shopId', 'shopName')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    const total = await Review.countDocuments({ userId, status: 'active' });
+
+    // Transform reviews
+    const transformedReviews = reviews.map(review => ({
+      id: review._id,
+      shop: review.shopId ? review.shopId.shopName : 'Unknown Shop',
+      shopId: review.shopId ? review.shopId._id : null,
+      rating: review.rating,
+      comment: review.comment,
+      status: review.status,
+      date: review.createdAt.toISOString().split('T')[0],
+      createdAt: review.createdAt
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        reviews: transformedReviews,
+        pagination: {
+          currentPage: page,
+          totalPages: Math.ceil(total / limit),
+          totalReviews: total,
+          hasNext: page < Math.ceil(total / limit),
+          hasPrev: page > 1
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Get my reviews error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch user reviews'
+    });
+  }
+};
+
 // Helper function to update shop rating
 async function updateShopRating(shopId) {
   try {

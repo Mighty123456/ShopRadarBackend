@@ -11,6 +11,9 @@ router.get('/shop/:shopId', reviewController.getShopReviews);
 // User routes (require user authentication)
 router.use(authMiddleware);
 
+// Get user's own reviews
+router.get('/my-reviews', reviewController.getMyReviews);
+
 // Create a new review
 router.post('/', reviewController.createReview);
 

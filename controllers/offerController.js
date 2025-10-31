@@ -538,6 +538,8 @@ exports.getFeaturedOffers = async (req, res) => {
     const limit = parseInt(req.query.limit) || 10;
     const { latitude, longitude, radius = 8000 } = req.query; // Enable geo filtering by default
 
+    console.log(`[Featured Offers] Fetching offers - lat: ${latitude}, lng: ${longitude}, radius: ${radius}`);
+
     // Build filter for active offers
     const filter = {
       status: 'active',
@@ -546,31 +548,47 @@ exports.getFeaturedOffers = async (req, res) => {
     };
 
     let shopIds = [];
+    let shopQuery = {
+      verificationStatus: 'approved',
+      isActive: true
+      // Removed isLive requirement - show offers from all approved active shops
+    };
 
     if (latitude && longitude) {
       // Only fetch shops within the radius
-      const shops = await Shop.find({
-        verificationStatus: 'approved',
-        isActive: true,
-        isLive: true,
-        location: {
-          $near: {
-            $geometry: { type: 'Point', coordinates: [parseFloat(longitude), parseFloat(latitude)] },
-            $maxDistance: parseInt(radius)
-          }
+      shopQuery.location = {
+        $near: {
+          $geometry: { type: 'Point', coordinates: [parseFloat(longitude), parseFloat(latitude)] },
+          $maxDistance: parseInt(radius)
         }
-      }).select('_id');
+      };
+      
+      console.log(`[Featured Offers] Finding shops within ${radius}m of ${latitude}, ${longitude}`);
+      const shops = await Shop.find(shopQuery).select('_id location');
       shopIds = shops.map(shop => shop._id);
+      console.log(`[Featured Offers] Found ${shopIds.length} shops within radius`);
     } else {
-      // All live/active/approved shops
-      const shops = await Shop.find({
-        verificationStatus: 'approved',
-        isActive: true,
-        isLive: true
-      }).select('_id');
+      // All active/approved shops (no location filter)
+      console.log('[Featured Offers] Finding all active/approved shops (no location filter)');
+      const shops = await Shop.find(shopQuery).select('_id');
       shopIds = shops.map(shop => shop._id);
+      console.log(`[Featured Offers] Found ${shopIds.length} total shops`);
     }
+    
+    if (shopIds.length === 0) {
+      console.log('[Featured Offers] No shops found matching criteria');
+      return res.json({
+        success: true,
+        data: {
+          offers: [],
+          total: 0,
+          timestamp: new Date().toISOString()
+        }
+      });
+    }
+
     filter.shopId = { $in: shopIds };
+    console.log(`[Featured Offers] Querying offers for ${shopIds.length} shops`);
 
     // Get featured offers with shop and product details
     const offers = await Offer.find(filter)
@@ -578,6 +596,8 @@ exports.getFeaturedOffers = async (req, res) => {
       .populate('productId', 'name category price images')
       .sort({ createdAt: -1 })
       .limit(limit);
+
+    console.log(`[Featured Offers] Found ${offers.length} offers from database`);
 
     // Filter out offers with null shopId or productId and transform for frontend
     const transformedOffers = offers
@@ -599,7 +619,7 @@ exports.getFeaturedOffers = async (req, res) => {
           address: offer.shopId.address,
           phone: offer.shopId.phone,
           rating: offer.shopId.rating || 0,
-          isLive: offer.shopId.isLive
+          isLive: offer.shopId.isLive || false
         },
         product: {
           id: offer.productId._id,
@@ -611,6 +631,8 @@ exports.getFeaturedOffers = async (req, res) => {
         createdAt: offer.createdAt,
         updatedAt: offer.updatedAt
       }));
+
+    console.log(`[Featured Offers] Returning ${transformedOffers.length} valid offers`);
 
     res.json({
       success: true,
