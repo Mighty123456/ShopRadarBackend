@@ -684,10 +684,12 @@ exports.uploadShopPhotoAndCheckExif = async (req, res) => {
     const shop = await Shop.findOne({ ownerId: req.user.id });
     if (!shop) return res.status(404).json({ message: 'No shop found for this user' });
 
-    // Optionally re-host in Cloudinary folder
+    // Optionally re-host in Cloudinary folder (organized per shop)
     let uploaded = { url: photoUrl, publicId: undefined };
     try {
-      uploaded = await uploadFromUrl(photoUrl, 'shop-proof');
+      const shopCode = shop.licenseNumber || shop._id.toString();
+      const targetFolder = `${shopCode}/shop-proof`;
+      uploaded = await uploadFromUrl(photoUrl, targetFolder);
     } catch (_) {}
 
     const exif = await parseExifFromImageUrl(uploaded.url);

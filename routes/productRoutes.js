@@ -2,12 +2,16 @@ const express = require('express');
 const router = express.Router();
 const productController = require('../controllers/productController');
 const adminAuthMiddleware = require('../middleware/adminAuthMiddleware');
+const authMiddleware = require('../middleware/authMiddleware');
 
 // Public product search
 router.get('/search', productController.searchProductsPublic);
 
 // Enhanced product search with shops and offers
 router.get('/search-with-shops', productController.searchProductsWithShopsAndOffers);
+
+// Business dashboard: Product image upload (for shopkeepers only)
+router.post('/upload-image', authMiddleware, productController.uploadProductImage);
 
 // All product routes require admin authentication
 router.use(adminAuthMiddleware);

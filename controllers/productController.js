@@ -4,6 +4,8 @@ const Offer = require('../models/offerModel');
 const { logActivity } = require('./activityController');
 const websocketService = require('../services/websocketService');
 const { expandQueryTerms, computeProductRelevance } = require('../services/searchService');
+const { handleSingleFile } = require('./uploadController');
+const { uploadBuffer, isCloudinaryConfigured } = require('../services/cloudinaryService');
 
 // Public: Search products (keyword + filters + pagination)
 exports.searchProductsPublic = async (req, res) => {
@@ -931,3 +933,46 @@ exports.createProductWithOffer = async (req, res) => {
     });
   }
 };
+
+// POST /api/products/upload-image - Upload product image (form-data: file, category)
+exports.uploadProductImage = [handleSingleFile, async (req, res) => {
+  try {
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+    const category = req.body.category || req.query.category;
+    if (!category) {
+      return res.status(400).json({ success: false, message: 'Product category is required for image folder organization.' });
+    }
+    const file = req.file;
+    if (!file || !file.buffer) {
+      return res.status(400).json({ success: false, message: 'No file uploaded.' });
+    }
+    // Find current shop
+    const shop = await Shop.findOne({ ownerId: req.user.id });
+    if (!shop) {
+      return res.status(404).json({ success: false, message: 'Associated shop not found for this user.' });
+    }
+    const shopCode = shop.licenseNumber || shop._id.toString();
+    // Build target folder: <shopCode>/<category>
+    const cloudinaryFolder = `${shopCode}/${category}`;
+    if (!isCloudinaryConfigured()) {
+      return res.status(500).json({ success: false, message: 'Cloudinary not configured' });
+    }
+    // Perform upload
+    const uploadResult = await uploadBuffer(file.buffer, cloudinaryFolder, file.originalname);
+    // Response format matches the images schema in Product model
+    return res.json({
+      success: true,
+      image: {
+        url: uploadResult.url,
+        publicId: uploadResult.publicId,
+        mimeType: uploadResult.mimeType,
+        uploadedAt: new Date()
+      }
+    });
+  } catch (e) {
+    console.error('Product image upload error:', e);
+    return res.status(500).json({ success: false, message: 'Failed to upload product image' });
+  }
+}];
