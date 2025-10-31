@@ -304,7 +304,7 @@ exports.getShopsNearLocation = async (req, res) => {
     }
     const shops = await Shop.find(filter)
       .populate('ownerId', 'fullName')
-      .select('shopName address phone location verificationStatus rating reviewCount openingHours category description amenities isLive');
+      .select('shopName address phone location verificationStatus rating reviewCount openingHours category description amenities isLive photoProof');
     
     // Fetch offers for each shop
     const shopIds = shops.map(s => s._id);
@@ -366,7 +366,8 @@ exports.getShopsNearLocation = async (req, res) => {
         isLive: shop.isLive,
         isOpen: shop.isLive, // Shop is open if it's live
         verificationStatus: shop.verificationStatus,
-        owner: shop.ownerId
+        owner: shop.ownerId,
+        photoProof: shop.photoProof || null
       };
     });
     
