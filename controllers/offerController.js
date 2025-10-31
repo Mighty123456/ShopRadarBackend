@@ -598,6 +598,7 @@ exports.getFeaturedOffers = async (req, res) => {
     
     if (shopIds.length === 0) {
       console.log('[Featured Offers] No shops found matching criteria');
+      console.log('[Featured Offers] Shop filter used:', JSON.stringify(shopFilter));
       return res.json({
         success: true,
         data: {
@@ -610,6 +611,7 @@ exports.getFeaturedOffers = async (req, res) => {
 
     offerFilter.shopId = { $in: shopIds };
     console.log(`[Featured Offers] Querying offers for ${shopIds.length} shops`);
+    console.log(`[Featured Offers] Offer filter:`, JSON.stringify(offerFilter));
 
     // Optimize: Use populate with select to only fetch needed fields
     // Get featured offers with shop and product details using optimized populate
@@ -628,6 +630,15 @@ exports.getFeaturedOffers = async (req, res) => {
       .lean(); // Use lean() for faster queries (returns plain JS objects)
 
     console.log(`[Featured Offers] Found ${offers.length} offers from database`);
+
+    // Debug: Log offers that fail populate filtering
+    const offersWithNullRefs = offers.filter(offer => !offer.shopId || !offer.productId);
+    if (offersWithNullRefs.length > 0) {
+      console.log(`[Featured Offers] WARNING: ${offersWithNullRefs.length} offers filtered out due to null shopId or productId`);
+      offersWithNullRefs.forEach(offer => {
+        console.log(`  - Offer ${offer._id}: shopId=${offer.shopId ? 'exists' : 'NULL'}, productId=${offer.productId ? 'exists' : 'NULL'}`);
+      });
+    }
 
     // Filter out offers with null shopId or productId and transform for frontend
     const transformedOffers = offers

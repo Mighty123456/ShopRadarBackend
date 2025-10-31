@@ -976,10 +976,10 @@ exports.uploadProductImage = [handleSingleFile, async (req, res) => {
     }
     // Perform upload
     const uploadResult = await uploadBuffer(file.buffer, cloudinaryFolder, file.originalname);
-    // Response format matches the images schema in Product model
+    // Response format matches the images schema in Product model and frontend expectations
     return res.json({
       success: true,
-      image: {
+      data: {
         url: uploadResult.url,
         publicId: uploadResult.publicId,
         mimeType: uploadResult.mimeType,
