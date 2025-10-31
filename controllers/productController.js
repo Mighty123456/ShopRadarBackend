@@ -658,7 +658,7 @@ exports.getMyProducts = async (req, res) => {
 exports.updateMyProduct = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, category, price, stock, status } = req.body;
+    const { name, description, category, price, stock, status, image, brand, itemName, model } = req.body;
     
     // Get shop ID from authenticated user
     const shop = await Shop.findOne({ ownerId: req.user.id });
@@ -682,9 +682,24 @@ exports.updateMyProduct = async (req, res) => {
     if (name !== undefined) product.name = name;
     if (description !== undefined) product.description = description;
     if (category !== undefined) product.category = category;
+    if (brand !== undefined) product.brand = brand;
+    if (itemName !== undefined) product.itemName = itemName;
+    // Handle model as itemName for backward compatibility
+    if (model !== undefined && itemName === undefined) product.itemName = model;
     if (price !== undefined) product.price = price;
     if (stock !== undefined) product.stock = stock;
     if (status !== undefined) product.status = status;
+    
+    // Update image if provided
+    if (image !== undefined) {
+      if (image && typeof image === 'object') {
+        // If image is provided as an object with url, publicId, etc.
+        product.images = [image];
+      } else if (image === null || image === '') {
+        // If image is null or empty string, clear images
+        product.images = [];
+      }
+    }
     
     await product.save();
     
