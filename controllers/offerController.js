@@ -532,45 +532,66 @@ exports.getAllOffers = async (req, res) => {
   }
 };
 
-// Get featured offers (public endpoint)
+// Get featured offers (public endpoint) - OPTIMIZED
 exports.getFeaturedOffers = async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 10;
-    const { latitude, longitude, radius = 8000 } = req.query; // Enable geo filtering by default
+    const { latitude, longitude, radius = 8000 } = req.query;
+    const now = new Date();
 
     console.log(`[Featured Offers] Fetching offers - lat: ${latitude}, lng: ${longitude}, radius: ${radius}`);
 
     // Build filter for active offers
-    const filter = {
+    const offerFilter = {
       status: 'active',
-      startDate: { $lte: new Date() },
-      endDate: { $gte: new Date() }
+      startDate: { $lte: now },
+      endDate: { $gte: now }
+    };
+
+    // Build shop filter
+    const shopFilter = {
+      verificationStatus: 'approved',
+      isActive: true
     };
 
     let shopIds = [];
-    let shopQuery = {
-      verificationStatus: 'approved',
-      isActive: true
-      // Removed isLive requirement - show offers from all approved active shops
-    };
 
+    // Optimize: Use aggregation to join offers with shops in a single query when location is provided
     if (latitude && longitude) {
-      // Only fetch shops within the radius
-      shopQuery.location = {
-        $near: {
-          $geometry: { type: 'Point', coordinates: [parseFloat(longitude), parseFloat(latitude)] },
-          $maxDistance: parseInt(radius)
-        }
-      };
-      
-      console.log(`[Featured Offers] Finding shops within ${radius}m of ${latitude}, ${longitude}`);
-      const shops = await Shop.find(shopQuery).select('_id location');
-      shopIds = shops.map(shop => shop._id);
-      console.log(`[Featured Offers] Found ${shopIds.length} shops within radius`);
+      try {
+        // First, get shop IDs within radius (limit to reasonable number to avoid performance issues)
+        shopFilter.location = {
+          $near: {
+            $geometry: { type: 'Point', coordinates: [parseFloat(longitude), parseFloat(latitude)] },
+            $maxDistance: parseInt(radius)
+          }
+        };
+        
+        console.log(`[Featured Offers] Finding shops within ${radius}m of ${latitude}, ${longitude}`);
+        // Limit shop query to top 100 to prevent performance issues
+        const shops = await Shop.find(shopFilter)
+          .select('_id')
+          .limit(100)
+          .lean(); // Use lean() for faster queries
+        
+        shopIds = shops.map(shop => shop._id);
+        console.log(`[Featured Offers] Found ${shopIds.length} shops within radius`);
+      } catch (geoError) {
+        console.error('[Featured Offers] Geospatial query error:', geoError);
+        // Fallback to all shops if geospatial query fails
+        const shops = await Shop.find({ verificationStatus: 'approved', isActive: true })
+          .select('_id')
+          .limit(100)
+          .lean();
+        shopIds = shops.map(shop => shop._id);
+      }
     } else {
-      // All active/approved shops (no location filter)
+      // All active/approved shops (no location filter) - limit to prevent performance issues
       console.log('[Featured Offers] Finding all active/approved shops (no location filter)');
-      const shops = await Shop.find(shopQuery).select('_id');
+      const shops = await Shop.find(shopFilter)
+        .select('_id')
+        .limit(100) // Limit to prevent performance issues
+        .lean(); // Use lean() for faster queries
       shopIds = shops.map(shop => shop._id);
       console.log(`[Featured Offers] Found ${shopIds.length} total shops`);
     }
@@ -582,42 +603,52 @@ exports.getFeaturedOffers = async (req, res) => {
         data: {
           offers: [],
           total: 0,
-          timestamp: new Date().toISOString()
+          timestamp: now.toISOString()
         }
       });
     }
 
-    filter.shopId = { $in: shopIds };
+    offerFilter.shopId = { $in: shopIds };
     console.log(`[Featured Offers] Querying offers for ${shopIds.length} shops`);
 
-    // Get featured offers with shop and product details
-    const offers = await Offer.find(filter)
-      .populate('shopId', 'shopName address phone location rating isLive')
-      .populate('productId', 'name category price images')
+    // Optimize: Use populate with select to only fetch needed fields
+    // Get featured offers with shop and product details using optimized populate
+    const offers = await Offer.find(offerFilter)
+      .populate({
+        path: 'shopId',
+        select: 'shopName address phone location rating isLive verificationStatus isActive',
+        match: { verificationStatus: 'approved', isActive: true } // Filter during populate
+      })
+      .populate({
+        path: 'productId',
+        select: 'name category price images'
+      })
       .sort({ createdAt: -1 })
-      .limit(limit);
+      .limit(limit * 2) // Fetch more to account for filtered out items
+      .lean(); // Use lean() for faster queries (returns plain JS objects)
 
     console.log(`[Featured Offers] Found ${offers.length} offers from database`);
 
     // Filter out offers with null shopId or productId and transform for frontend
     const transformedOffers = offers
-      .filter(offer => offer.shopId && offer.productId)
+      .filter(offer => offer.shopId && offer.productId) // Filter null refs
+      .slice(0, limit) // Limit to requested amount after filtering
       .map(offer => ({
         id: offer._id,
         title: offer.title,
-        description: offer.description,
+        description: offer.description || '',
         discountType: offer.discountType,
         discountValue: offer.discountValue,
         startDate: offer.startDate,
         endDate: offer.endDate,
-        maxUses: offer.maxUses,
-        currentUses: offer.currentUses,
+        maxUses: offer.maxUses || 0,
+        currentUses: offer.currentUses || 0,
         status: offer.status,
         shop: {
           id: offer.shopId._id,
           name: offer.shopId.shopName,
-          address: offer.shopId.address,
-          phone: offer.shopId.phone,
+          address: offer.shopId.address || '',
+          phone: offer.shopId.phone || '',
           rating: offer.shopId.rating || 0,
           isLive: offer.shopId.isLive || false
         },
@@ -639,7 +670,7 @@ exports.getFeaturedOffers = async (req, res) => {
       data: {
         offers: transformedOffers,
         total: transformedOffers.length,
-        timestamp: new Date().toISOString()
+        timestamp: now.toISOString()
       }
     });
   } catch (error) {

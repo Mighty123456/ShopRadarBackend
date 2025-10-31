@@ -118,6 +118,9 @@ offerSchema.index({ status: 1 });
 offerSchema.index({ category: 1 });
 offerSchema.index({ startDate: 1, endDate: 1 });
 offerSchema.index({ discountValue: 1 });
+// Compound indexes for common query patterns
+offerSchema.index({ status: 1, shopId: 1, startDate: 1, endDate: 1 }); // For featured offers query
+offerSchema.index({ status: 1, createdAt: -1 }); // For sorting by newest
 
 // Virtual for checking if offer is currently valid
 offerSchema.virtual('isValid').get(function() {
