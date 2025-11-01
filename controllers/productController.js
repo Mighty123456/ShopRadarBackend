@@ -65,12 +65,15 @@ exports.searchProductsPublic = async (req, res) => {
     ]);
 
     // Fetch best active and currently valid offer per product (percentage normalized 0-100)
+    // CRITICAL: Only include offers for the specific product, not shop-level offers
     const productIdToBestDiscount = {};
     try {
       const productIds = items.map(p => p._id);
       const productIdToPrice = {};
+      // Build a map for quick lookup - ensure consistent string format
       for (const p of items) {
-        productIdToPrice[p._id.toString()] = Number(p.price) || 0;
+        const pid = String(p._id); // Use String() for consistent conversion
+        productIdToPrice[pid] = Number(p.price) || 0;
       }
       const now = new Date();
       const activeOffers = await Offer.find({
@@ -78,15 +81,23 @@ exports.searchProductsPublic = async (req, res) => {
         status: 'active',
         startDate: { $lte: now },
         endDate: { $gte: now }
-      }).select('productId discountType discountValue');
+      }).select('productId discountType discountValue').lean(); // Use lean() for better performance
+      
+      // Only process offers that are actually for these specific products
       for (const offer of activeOffers) {
+        // Ensure productId is properly extracted and normalized
+        const pid = offer.productId ? String(offer.productId) : null;
+        if (!pid || !productIdToPrice.hasOwnProperty(pid)) {
+          // Skip if offer doesn't match any product in our search results
+          continue;
+        }
+        
         let value = 0;
         if (offer.discountType === 'Percentage') {
           value = Number(offer.discountValue);
         } else if (offer.discountType === 'Fixed Amount') {
           // Convert fixed amount to percentage of the product price
-          const pid = offer.productId?.toString();
-          const price = pid ? (productIdToPrice[pid] || 0) : 0;
+          const price = productIdToPrice[pid] || 0;
           if (price > 0) {
             value = Math.max(0, Math.min(100, (Number(offer.discountValue) / price) * 100));
           } else {
@@ -94,13 +105,14 @@ exports.searchProductsPublic = async (req, res) => {
           }
         }
         
-        const pid = offer.productId?.toString();
-        if (!pid) continue;
-        if (productIdToBestDiscount[pid] == null || value > productIdToBestDiscount[pid]) {
+        // Only set if this is a better discount than already found for this product
+        if (value > 0 && (productIdToBestDiscount[pid] == null || value > productIdToBestDiscount[pid])) {
           productIdToBestDiscount[pid] = value;
         }
       }
-    } catch (_) {}
+    } catch (error) {
+      console.error('Error fetching product offers:', error);
+    }
 
     // Build mapped results with simple relevance
     const tokensForScore = q ? expandQueryTerms(q) : [];
@@ -123,7 +135,8 @@ exports.searchProductsPublic = async (req, res) => {
             rating: p.shopId.rating,
             isLive: p.shopId.isLive
           } : null,
-          bestOfferPercent: productIdToBestDiscount[p._id.toString()] || 0,
+          // Ensure we use the same string format for lookup
+          bestOfferPercent: productIdToBestDiscount[String(p._id)] || 0,
           createdAt: p.createdAt
         };
         if (tokensForScore.length) {

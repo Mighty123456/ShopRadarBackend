@@ -29,16 +29,32 @@ class SearchController {
         .populate('shopId', 'shopName rating location verificationStatus isActive isLive')
         .limit(500);
 
-      // Preload offers per product
+      // Preload offers per product - CRITICAL: Only include offers for specific products
       const productIds = products.map(p => p._id);
-      const offers = await Offer.find({ productId: { $in: productIds }, status: 'active', startDate: { $lte: new Date() }, endDate: { $gte: new Date() } })
-        .select('productId discountType discountValue');
+      // Build a set of product IDs for validation
+      const productIdSet = new Set(products.map(p => String(p._id)));
+      
+      const offers = await Offer.find({ 
+        productId: { $in: productIds }, 
+        status: 'active', 
+        startDate: { $lte: new Date() }, 
+        endDate: { $gte: new Date() } 
+      }).select('productId discountType discountValue').lean();
+      
       const bestOfferPctByProduct = new Map();
       for (const ofr of offers) {
-        const pct = ofr.discountType === 'Percentage' ? ofr.discountValue : 0; // keep simple
-        const key = String(ofr.productId);
+        // Ensure this offer is for one of the products in our search results
+        const key = ofr.productId ? String(ofr.productId) : null;
+        if (!key || !productIdSet.has(key)) {
+          // Skip if offer doesn't match any product in our search results
+          continue;
+        }
+        
+        const pct = ofr.discountType === 'Percentage' ? Number(ofr.discountValue) : 0;
         const prev = bestOfferPctByProduct.get(key) || 0;
-        bestOfferPctByProduct.set(key, Math.max(prev, pct));
+        if (pct > 0) {
+          bestOfferPctByProduct.set(key, Math.max(prev, pct));
+        }
       }
 
       const scored = [];
