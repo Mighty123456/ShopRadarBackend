@@ -70,25 +70,51 @@ exports.searchProductsPublic = async (req, res) => {
     try {
       const productIds = items.map(p => p._id);
       const productIdToPrice = {};
-      // Build a map for quick lookup - ensure consistent string format
+      const productIdMap = {}; // Map for exact ObjectId matching
+      
+      // Build maps for quick lookup - ensure consistent string format
       for (const p of items) {
         const pid = String(p._id); // Use String() for consistent conversion
         productIdToPrice[pid] = Number(p.price) || 0;
+        productIdMap[pid] = p._id; // Store original ObjectId for exact matching
       }
+      
       const now = new Date();
       const activeOffers = await Offer.find({
         productId: { $in: productIds },
         status: 'active',
         startDate: { $lte: now },
         endDate: { $gte: now }
-      }).select('productId discountType discountValue').lean(); // Use lean() for better performance
+      }).select('productId discountType discountValue').lean();
       
       // Only process offers that are actually for these specific products
       for (const offer of activeOffers) {
         // Ensure productId is properly extracted and normalized
-        const pid = offer.productId ? String(offer.productId) : null;
+        // Handle both ObjectId and string formats for comparison
+        let pid = null;
+        if (offer.productId) {
+          // Convert to string for comparison, handling ObjectId objects
+          if (offer.productId instanceof mongoose.Types.ObjectId || 
+              (typeof offer.productId === 'object' && offer.productId.toString)) {
+            pid = offer.productId.toString();
+          } else {
+            pid = String(offer.productId);
+          }
+        }
+        
+        // CRITICAL: Verify this offer belongs to one of our search result products
+        // Use strict comparison to ensure exact match
         if (!pid || !productIdToPrice.hasOwnProperty(pid)) {
           // Skip if offer doesn't match any product in our search results
+          // This prevents shop-level offers from being applied to wrong products
+          continue;
+        }
+        
+        // Additional verification: Ensure the product ID string matches exactly
+        // This catches any edge cases where string conversion might differ
+        const matchingProduct = items.find(p => String(p._id) === pid);
+        if (!matchingProduct) {
+          // This shouldn't happen if hasOwnProperty check passed, but double-check anyway
           continue;
         }
         
@@ -109,6 +135,12 @@ exports.searchProductsPublic = async (req, res) => {
         if (value > 0 && (productIdToBestDiscount[pid] == null || value > productIdToBestDiscount[pid])) {
           productIdToBestDiscount[pid] = value;
         }
+      }
+      
+      // Debug: Log products without offers to verify they're not getting shop offers
+      const productsWithoutOffers = items.filter(p => !productIdToBestDiscount[String(p._id)]);
+      if (productsWithoutOffers.length > 0) {
+        console.log(`[Product Search] Products WITHOUT offers: ${productsWithoutOffers.map(p => `"${p.name}" (${String(p._id)})`).join(', ')}`);
       }
     } catch (error) {
       console.error('Error fetching product offers:', error);
@@ -135,8 +167,9 @@ exports.searchProductsPublic = async (req, res) => {
             rating: p.shopId.rating,
             isLive: p.shopId.isLive
           } : null,
-          // Ensure we use the same string format for lookup
-          bestOfferPercent: productIdToBestDiscount[String(p._id)] || 0,
+          // CRITICAL: Only use product-specific offers, never shop-level offers
+          // If productIdToBestDiscount doesn't have this product's ID, return 0 (no offer)
+          bestOfferPercent: productIdToBestDiscount[String(p._id)] ?? 0,
           createdAt: p.createdAt
         };
         if (tokensForScore.length) {
