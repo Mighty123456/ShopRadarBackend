@@ -2,6 +2,7 @@ const Review = require('../models/reviewModel');
 const User = require('../models/userModel');
 const Shop = require('../models/shopModel');
 const { logActivity } = require('./activityController');
+const sentimentAnalysisService = require('../services/sentimentAnalysisService');
 
 // Get all reviews with pagination and filtering
 exports.getAllReviews = async (req, res) => {
@@ -54,7 +55,9 @@ exports.getAllReviews = async (req, res) => {
       moderatedBy: review.moderatedBy,
       moderationNotes: review.moderationNotes,
       moderatedAt: review.moderatedAt,
-      reportReasons: review.reportReasons
+      reportReasons: review.reportReasons,
+      sentiment: review.sentiment || 'neutral',
+      sentimentConfidence: review.sentimentConfidence || 0.5
     }));
     
     res.json({
@@ -226,6 +229,28 @@ exports.getReviewStats = async (req, res) => {
       },
       { $sort: { _id: 1 } }
     ]);
+
+    // Get sentiment distribution
+    const sentimentDistribution = await Review.aggregate([
+      { $match: { status: 'active' } },
+      {
+        $group: {
+          _id: '$sentiment',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Calculate average sentiment confidence
+    const sentimentConfidenceStats = await Review.aggregate([
+      { $match: { status: 'active', sentimentConfidence: { $exists: true } } },
+      {
+        $group: {
+          _id: null,
+          avgConfidence: { $avg: '$sentimentConfidence' }
+        }
+      }
+    ]);
     
     res.json({
       success: true,
@@ -236,7 +261,14 @@ exports.getReviewStats = async (req, res) => {
         removedReviews,
         newReviews,
         avgRating: Math.round(avgRating * 10) / 10,
-        ratingDistribution
+        ratingDistribution,
+        sentimentDistribution: sentimentDistribution.reduce((acc, item) => {
+          acc[item._id || 'neutral'] = item.count;
+          return acc;
+        }, { positive: 0, negative: 0, neutral: 0 }),
+        avgSentimentConfidence: sentimentConfidenceStats.length > 0 
+          ? Math.round(sentimentConfidenceStats[0].avgConfidence * 100) / 100 
+          : 0
       }
     });
     
@@ -289,15 +321,26 @@ exports.createReview = async (req, res) => {
       });
     }
 
+    // Analyze sentiment using ML (Naive Bayes)
+    const sentimentAnalysis = sentimentAnalysisService.analyzeSentiment(comment, rating);
+
     // Create new review
     const review = new Review({
       userId,
       shopId,
       rating,
-      comment: comment.trim()
+      comment: comment.trim(),
+      sentiment: sentimentAnalysis.sentiment,
+      sentimentConfidence: sentimentAnalysis.confidence,
+      sentimentScore: sentimentAnalysis.score,
+      sentimentNormalizedScore: sentimentAnalysis.normalizedScore,
+      sentimentAnalyzedAt: new Date()
     });
 
     await review.save();
+
+    // Retrain model with new review (for continuous learning)
+    sentimentAnalysisService.retrainWithReview(comment, sentimentAnalysis.sentiment, rating);
 
     // Update shop rating and review count
     await updateShopRating(shopId);
@@ -377,6 +420,19 @@ exports.updateReview = async (req, res) => {
     // Update review fields
     if (rating !== undefined) review.rating = rating;
     if (comment !== undefined) review.comment = comment.trim();
+
+    // Re-analyze sentiment if comment or rating changed
+    if (rating !== undefined || comment !== undefined) {
+      const newComment = comment !== undefined ? comment.trim() : review.comment;
+      const newRating = rating !== undefined ? rating : review.rating;
+      const sentimentAnalysis = sentimentAnalysisService.analyzeSentiment(newComment, newRating);
+      
+      review.sentiment = sentimentAnalysis.sentiment;
+      review.sentimentConfidence = sentimentAnalysis.confidence;
+      review.sentimentScore = sentimentAnalysis.score;
+      review.sentimentNormalizedScore = sentimentAnalysis.normalizedScore;
+      review.sentimentAnalyzedAt = new Date();
+    }
 
     await review.save();
 
@@ -518,7 +574,9 @@ exports.getShopReviews = async (req, res) => {
       rating: review.rating,
       comment: review.comment,
       date: review.createdAt.toISOString().split('T')[0],
-      createdAt: review.createdAt
+      createdAt: review.createdAt,
+      sentiment: review.sentiment || 'neutral',
+      sentimentConfidence: review.sentimentConfidence || 0.5
     }));
 
     res.json({
@@ -546,6 +604,52 @@ exports.getShopReviews = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch shop reviews'
+    });
+  }
+};
+
+// Get user's review for a specific shop
+exports.getMyReviewForShop = async (req, res) => {
+  try {
+    const { shopId } = req.params;
+    const userId = req.user.id;
+
+    // Find the review for this user and shop
+    const review = await Review.findOne({ userId, shopId, status: 'active' })
+      .populate('shopId', 'shopName');
+
+    if (!review) {
+      return res.json({
+        success: true,
+        data: null // No review found
+      });
+    }
+
+    // Transform review
+    const transformedReview = {
+      id: review._id,
+      shop: review.shopId ? review.shopId.shopName : 'Unknown Shop',
+      shopId: review.shopId ? review.shopId._id : null,
+      rating: review.rating,
+      comment: review.comment,
+      status: review.status,
+      date: review.createdAt.toISOString().split('T')[0],
+      createdAt: review.createdAt,
+      updatedAt: review.updatedAt,
+      sentiment: review.sentiment || 'neutral',
+      sentimentConfidence: review.sentimentConfidence || 0.5
+    };
+
+    res.json({
+      success: true,
+      data: transformedReview
+    });
+
+  } catch (error) {
+    console.error('Get my review for shop error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch review'
     });
   }
 };
@@ -598,6 +702,94 @@ exports.getMyReviews = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch user reviews'
+    });
+  }
+};
+
+// Report a review
+exports.reportReview = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+    const userId = req.user.id;
+
+    if (!reason || reason.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Report reason is required'
+      });
+    }
+
+    // Find the review
+    const review = await Review.findById(id);
+    if (!review) {
+      return res.status(404).json({
+        success: false,
+        message: 'Review not found'
+      });
+    }
+
+    // Check if user already reported this review
+    const alreadyReported = review.reportReasons.some(
+      report => report.reportedBy && report.reportedBy.toString() === userId
+    );
+
+    if (alreadyReported) {
+      return res.status(400).json({
+        success: false,
+        message: 'You have already reported this review'
+      });
+    }
+
+    // Add report
+    review.reportReasons.push({
+      reason: reason.trim(),
+      reportedBy: userId,
+      reportedAt: new Date()
+    });
+
+    // Increment report count
+    review.reportCount = (review.reportCount || 0) + 1;
+
+    // Auto-flag if report count reaches threshold (e.g., 3)
+    if (review.reportCount >= 3 && review.status === 'active') {
+      review.status = 'flagged';
+    }
+
+    await review.save();
+
+    // Log the activity
+    await logActivity({
+      type: 'review_reported',
+      description: `Review reported by user`,
+      userId: userId,
+      shopId: review.shopId,
+      metadata: {
+        reviewId: review._id,
+        reason: reason,
+        reportCount: review.reportCount,
+        autoFlagged: review.reportCount >= 3
+      },
+      severity: 'medium',
+      status: 'success',
+      ipAddress: req.ip || req.connection.remoteAddress,
+      userAgent: req.get('User-Agent')
+    });
+
+    res.json({
+      success: true,
+      message: 'Review reported successfully',
+      data: {
+        reportCount: review.reportCount,
+        autoFlagged: review.reportCount >= 3
+      }
+    });
+
+  } catch (error) {
+    console.error('Report review error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to report review'
     });
   }
 };

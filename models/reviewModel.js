@@ -57,6 +57,33 @@ const reviewSchema = new mongoose.Schema({
   moderationNotes: String,
   moderatedAt: Date,
   
+  // Sentiment Analysis (ML-based)
+  sentiment: {
+    type: String,
+    enum: ['positive', 'negative', 'neutral'],
+    default: 'neutral'
+  },
+  sentimentConfidence: {
+    type: Number,
+    min: 0,
+    max: 1,
+    default: 0.5
+  },
+  sentimentScore: {
+    type: Number,
+    default: 0 // -5 to +5
+  },
+  sentimentNormalizedScore: {
+    type: Number,
+    min: 0,
+    max: 1,
+    default: 0.5
+  },
+  sentimentAnalyzedAt: {
+    type: Date,
+    default: Date.now
+  },
+  
   // Timestamps
   createdAt: {
     type: Date,

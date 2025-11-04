@@ -14,6 +14,9 @@ router.use(authMiddleware);
 // Get user's own reviews
 router.get('/my-reviews', reviewController.getMyReviews);
 
+// Get user's review for a specific shop
+router.get('/shop/:shopId/my-review', reviewController.getMyReviewForShop);
+
 // Create a new review
 router.post('/', reviewController.createReview);
 
@@ -22,6 +25,9 @@ router.put('/:id', reviewController.updateReview);
 
 // Delete a review
 router.delete('/:id', reviewController.deleteReview);
+
+// Report a review
+router.post('/:id/report', reviewController.reportReview);
 
 // Admin routes (require admin authentication)
 router.use('/admin', adminAuthMiddleware);
