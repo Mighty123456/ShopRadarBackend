@@ -91,21 +91,37 @@ exports.searchShopsPublic = async (req, res) => {
       });
     }
 
+    // Calculate distance for each shop if user location is provided
+    const userLat = latitude ? parseFloat(latitude) : null;
+    const userLon = longitude ? parseFloat(longitude) : null;
+
     res.json({
       success: true,
-      data: shops.map(s => ({
-        id: s._id,
-        name: s.shopName,
-        address: s.address,
-        phone: s.phone,
-        location: s.location,
-        rating: s.rating || 0,
-        reviewCount: s.reviewCount || 0,
-        offers: offersByShop[s._id.toString()] || [],
-        isLive: s.isLive,
-        isOpen: s.isLive,
-        createdAt: s.createdAt
-      })),
+      data: shops.map(s => {
+        const shopData = {
+          id: s._id,
+          name: s.shopName,
+          address: s.address,
+          phone: s.phone,
+          location: s.location,
+          rating: s.rating || 0,
+          reviewCount: s.reviewCount || 0,
+          offers: offersByShop[s._id.toString()] || [],
+          isLive: s.isLive,
+          isOpen: s.isLive,
+          createdAt: s.createdAt
+        };
+
+        // Calculate distance if user location is provided
+        if (userLat !== null && userLon !== null && s.location && s.location.coordinates) {
+          const shopLat = s.location.coordinates[1];
+          const shopLon = s.location.coordinates[0];
+          const distanceMeters = haversineMeters(userLat, userLon, shopLat, shopLon);
+          shopData.distanceKm = distanceMeters / 1000; // Convert to kilometers
+        }
+
+        return shopData;
+      }),
       pagination: {
         currentPage: page,
         totalPages: Math.ceil(total / limit),
