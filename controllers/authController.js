@@ -2,7 +2,7 @@ const User = require('../models/userModel');
 const Shop = require('../models/shopModel');
 const authService = require('../services/authService');
 const emailService = require('../services/emailService');
-const { verifyGoogleIdToken } = require('../services/googleAuthService');
+const { verifyGoogleIdToken } = require('../services/googleVerify');
 const websocketService = require('../services/websocketService');
 
 exports.register = async (req, res) => {
@@ -500,51 +500,55 @@ exports.refreshToken = async (req, res) => {
 exports.googleSignIn = async (req, res) => {
   try {
     const { idToken } = req.body;
-    
+
     if (!idToken) {
       return res.status(400).json({ message: 'ID token is required' });
     }
 
     const payload = await verifyGoogleIdToken(idToken);
-    
+
     let user = await User.findOne({ googleId: payload.sub });
-    
     if (!user) {
       user = await User.findOne({ email: payload.email });
-      
       if (user) {
         user.googleId = payload.sub;
-        user.name = payload.name;
-        user.picture = payload.picture;
+        user.fullName = payload.name || user.fullName;
+        user.picture = payload.picture || user.picture;
         user.isEmailVerified = true;
         await user.save();
       } else {
         user = new User({
           email: payload.email,
           googleId: payload.sub,
-          name: payload.name,
+          fullName: payload.name,
           picture: payload.picture,
           isEmailVerified: true,
+          role: 'customer',
         });
         await user.save();
       }
     }
 
     const token = authService.generateToken(user);
+    const refreshToken = authService.generateRefreshToken
+      ? authService.generateRefreshToken(user)
+      : undefined;
 
     res.json({
       message: 'Google sign in successful',
       token,
+      ...(refreshToken ? { refreshToken } : {}),
       user: {
         id: user._id,
         email: user.email,
-        name: user.name,
+        fullName: user.fullName,
         picture: user.picture,
-        isEmailVerified: user.isEmailVerified
-      }
+        role: user.role,
+        isEmailVerified: user.isEmailVerified,
+      },
     });
   } catch (err) {
     console.error('Google sign in error:', err);
     res.status(500).json({ message: 'Server error' });
   }
-}; 
+};

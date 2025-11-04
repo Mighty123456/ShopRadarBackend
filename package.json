@@ -21,27 +21,27 @@
     "axios": "^1.11.0",
     "bcryptjs": "^3.0.2",
     "cloudinary": "^2.5.0",
+    "compromise": "^14.10.0",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "exifreader": "^4.23.5",
     "express": "^5.1.0",
     "express-session": "^1.18.2",
+    "google-auth-library": "^9.15.1",
     "jsonwebtoken": "^9.0.2",
+    "ml-distance": "^4.0.0",
+    "ml-kmeans": "^6.0.0",
+    "ml-matrix": "^6.10.4",
     "mongoose": "^8.18.1",
     "multer": "^2.0.0",
+    "natural": "^8.1.0",
     "node-fetch": "^3.3.2",
+    "node-nlp": "^5.0.0-alpha.5",
     "nodemailer": "^7.0.10",
     "passport": "^0.7.0",
-    "passport-google-oauth20": "^2.0.0",
-    "socket.io": "^4.8.1",
-    "tesseract.js": "^6.0.1",
-    "ml-matrix": "^6.10.4",
-    "natural": "^8.1.0",
-    "compromise": "^14.10.0",
     "sentiment": "^5.0.2",
-    "node-nlp": "^5.0.0-alpha.5",
-    "ml-kmeans": "^6.0.0",
-    "ml-distance": "^4.0.0"
+    "socket.io": "^4.8.1",
+    "tesseract.js": "^6.0.1"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"
@@ -63,4 +63,3 @@
     "npm": ">=10.0.0"
   }
 }
-

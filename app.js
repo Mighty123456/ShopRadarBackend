@@ -19,7 +19,7 @@ const mlRoutes = require('./routes/mlRoutes');
 const searchRoutes = require('./routes/searchRoutes');
 const rankingRoutes = require('./routes/rankingRoutes');
 const categoryRoutes = require('./routes/categoryRoutes');
-const { passport: googlePassport } = require('./services/googleAuthService');
+// Removed Google passport strategy initialization
 const websocketService = require('./services/websocketService');
 const updateLastActive = require('./middleware/updateLastActive');
 
