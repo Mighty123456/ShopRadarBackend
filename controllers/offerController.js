@@ -107,9 +107,9 @@ exports.createOffer = async (req, res) => {
 
     // Populate product details for response
     await newOffer.populate('productId', 'name category price images');
-    await newOffer.populate('shopId', 'shopName address phone location rating isLive');
+    await newOffer.populate('shopId', 'shopName address phone location rating isLive verificationStatus isActive');
 
-    // Broadcast new offer to all connected clients
+    // Broadcast new offer to all connected clients (this triggers immediate refresh on frontend)
     websocketService.broadcastNewOffer({
       id: newOffer._id,
       title: newOffer.title,
@@ -640,39 +640,76 @@ exports.getFeaturedOffers = async (req, res) => {
       });
     }
 
+    // Helper function to calculate distance
+    const haversineMeters = (lat1, lon1, lat2, lon2) => {
+      const toRad = d => (d * Math.PI) / 180;
+      const R = 6371000; // Earth's radius in meters
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2) * Math.sin(dLon/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      return R * c;
+    };
+
     // Filter out offers with null shopId or productId and transform for frontend
     const transformedOffers = offers
       .filter(offer => offer.shopId && offer.productId) // Filter null refs
-      .slice(0, limit) // Limit to requested amount after filtering
-      .map(offer => ({
-        id: offer._id,
-        title: offer.title,
-        description: offer.description || '',
-        discountType: offer.discountType,
-        discountValue: offer.discountValue,
-        startDate: offer.startDate,
-        endDate: offer.endDate,
-        maxUses: offer.maxUses || 0,
-        currentUses: offer.currentUses || 0,
-        status: offer.status,
-        shop: {
-          id: offer.shopId._id,
-          name: offer.shopId.shopName,
-          address: offer.shopId.address || '',
-          phone: offer.shopId.phone || '',
-          rating: offer.shopId.rating || 0,
-          isLive: offer.shopId.isLive || false
-        },
-        product: {
-          id: offer.productId._id,
-          name: offer.productId.name,
-          category: offer.productId.category,
-          price: offer.productId.price,
-          images: offer.productId.images || []
-        },
-        createdAt: offer.createdAt,
-        updatedAt: offer.updatedAt
-      }));
+      .map(offer => {
+        // Calculate distance if location is provided
+        let distanceKm = null;
+        if (latitude && longitude && offer.shopId.location && offer.shopId.location.coordinates) {
+          const shopLon = offer.shopId.location.coordinates[0];
+          const shopLat = offer.shopId.location.coordinates[1];
+          const distanceMeters = haversineMeters(
+            parseFloat(latitude),
+            parseFloat(longitude),
+            shopLat,
+            shopLon
+          );
+          distanceKm = distanceMeters / 1000; // Convert to kilometers
+        }
+
+        return {
+          id: offer._id,
+          title: offer.title,
+          description: offer.description || '',
+          discountType: offer.discountType,
+          discountValue: offer.discountValue,
+          startDate: offer.startDate,
+          endDate: offer.endDate,
+          maxUses: offer.maxUses || 0,
+          currentUses: offer.currentUses || 0,
+          status: offer.status,
+          distance: distanceKm, // Distance in kilometers
+          shop: {
+            id: offer.shopId._id,
+            name: offer.shopId.shopName,
+            address: offer.shopId.address || '',
+            phone: offer.shopId.phone || '',
+            rating: offer.shopId.rating || 0,
+            isLive: offer.shopId.isLive || false,
+            location: offer.shopId.location || null
+          },
+          product: {
+            id: offer.productId._id,
+            name: offer.productId.name,
+            category: offer.productId.category,
+            price: offer.productId.price,
+            images: offer.productId.images || []
+          },
+          createdAt: offer.createdAt,
+          updatedAt: offer.updatedAt
+        };
+      })
+      // Filter by 8km distance when location is provided
+      .filter(offer => {
+        if (latitude && longitude && offer.distance !== null) {
+          return offer.distance <= 8; // Only show offers within 8km
+        }
+        // If no location provided, show all offers (fallback)
+        return true;
+      })
+      .slice(0, limit); // Limit to requested amount after filtering
 
     console.log(`[Featured Offers] Returning ${transformedOffers.length} valid offers`);
 
