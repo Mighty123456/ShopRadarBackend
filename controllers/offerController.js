@@ -813,8 +813,8 @@ exports.getFeaturedOffers = async (req, res) => {
 
     console.log(`[Featured Offers] Found ${offers.length} offers from database`);
 
-    // Debug: Log offers that fail populate filtering
-    const offersWithNullRefs = offers.filter(offer => !offer.shopId || !offer.productId);
+    // Debug: Log offers that fail populate filtering (only shopId is mandatory)
+    const offersWithNullRefs = offers.filter(offer => !offer.shopId);
     if (offersWithNullRefs.length > 0) {
       console.log(`[Featured Offers] WARNING: ${offersWithNullRefs.length} offers filtered out due to null shopId or productId`);
       offersWithNullRefs.forEach(offer => {
@@ -833,9 +833,9 @@ exports.getFeaturedOffers = async (req, res) => {
       return R * c;
     };
 
-    // Filter out offers with null shopId or productId and transform for frontend
+    // Transform for frontend; allow custom offers without productId
     const transformedOffers = offers
-      .filter(offer => offer.shopId && offer.productId) // Filter null refs
+      .filter(offer => offer.shopId) // Require valid shop only
       .map(offer => {
         // Calculate distance if location is provided
         let distanceKm = null;
@@ -851,7 +851,7 @@ exports.getFeaturedOffers = async (req, res) => {
           distanceKm = distanceMeters / 1000; // Convert to kilometers
         }
 
-        return {
+        const base = {
           id: offer._id,
           title: offer.title,
           description: offer.description || '',
@@ -875,16 +875,24 @@ exports.getFeaturedOffers = async (req, res) => {
             isLive: offer.shopId.isLive || false,
             location: offer.shopId.location || null
           },
-          product: {
+          isCustomOffer: !!offer.isCustomOffer,
+          customImageUrl: offer.customImageUrl || null,
+          customType: offer.customType || null,
+          createdAt: offer.createdAt,
+          updatedAt: offer.updatedAt
+        };
+
+        if (offer.productId) {
+          base.product = {
             id: offer.productId._id,
             name: offer.productId.name,
             category: offer.productId.category,
             price: offer.productId.price,
             images: offer.productId.images || []
-          },
-          createdAt: offer.createdAt,
-          updatedAt: offer.updatedAt
-        };
+          };
+        }
+
+        return base;
       })
       // Filter by 8km distance when location is provided
       .filter(offer => {
