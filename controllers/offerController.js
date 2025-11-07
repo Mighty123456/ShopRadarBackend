@@ -53,13 +53,13 @@ exports.getMyOffers = async (req, res) => {
 // Create a new offer
 exports.createOffer = async (req, res) => {
   try {
-    const { productId, title, description, category, discountType, discountValue, startDate, endDate, maxUses } = req.body;
+    const { productId, title, description, category, discountType, discountValue, startDate, endDate, maxUses, isCustomOffer, customImageUrl, customType } = req.body;
 
     // Validate required fields
-    if (!productId || !title || !discountType || !discountValue || !startDate || !endDate) {
+    if (!title || !startDate || !endDate) {
       return res.status(400).json({
         success: false,
-        message: 'Product ID, title, discount type, discount value, start date, and end date are required'
+        message: 'Title, start date, and end date are required'
       });
     }
 
@@ -72,13 +72,22 @@ exports.createOffer = async (req, res) => {
       });
     }
 
-    // Verify the product belongs to this shop
-    const product = await Product.findOne({ _id: productId, shopId: shop._id });
-    if (!product) {
-      return res.status(404).json({
-        success: false,
-        message: 'Product not found or does not belong to this shop'
-      });
+    let product = null;
+    if (!isCustomOffer) {
+      // For normal offers, verify product
+      if (!productId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Product ID is required for non-custom offers'
+        });
+      }
+      product = await Product.findOne({ _id: productId, shopId: shop._id });
+      if (!product) {
+        return res.status(404).json({
+          success: false,
+          message: 'Product not found or does not belong to this shop'
+        });
+      }
     }
 
     // Create offer with status derived from dates
@@ -90,23 +99,28 @@ exports.createOffer = async (req, res) => {
 
     const offerData = {
       shopId: shop._id,
-      productId: productId,
+      ...(isCustomOffer ? {} : { productId: productId }),
       title,
       description: description || '',
       category: category || 'Other',
-      discountType,
-      discountValue,
+      discountType: discountType || 'Fixed Amount',
+      discountValue: discountValue !== undefined ? discountValue : 0,
       startDate: parsedStart,
       endDate: parsedEnd,
       maxUses: maxUses || 0,
-      status: derivedStatus
+      status: derivedStatus,
+      isCustomOffer: !!isCustomOffer,
+      customImageUrl: customImageUrl || undefined,
+      customType: customType || undefined
     };
 
     const newOffer = new Offer(offerData);
     await newOffer.save();
 
     // Populate product details for response
-    await newOffer.populate('productId', 'name category price images');
+    if (!isCustomOffer) {
+      await newOffer.populate('productId', 'name category price images');
+    }
     await newOffer.populate('shopId', 'shopName address phone location rating isLive verificationStatus isActive');
 
     // Broadcast new offer to all connected clients (this triggers immediate refresh on frontend)
@@ -118,29 +132,36 @@ exports.createOffer = async (req, res) => {
       discountValue: newOffer.discountValue,
       startDate: newOffer.startDate,
       endDate: newOffer.endDate,
+      isCustomOffer: newOffer.isCustomOffer,
+      customImageUrl: newOffer.customImageUrl,
+      customType: newOffer.customType,
       shop: {
         id: newOffer.shopId._id,
         name: newOffer.shopId.shopName,
         address: newOffer.shopId.address,
         rating: newOffer.shopId.rating || 0
       },
-      product: {
-        id: newOffer.productId._id,
-        name: newOffer.productId.name,
-        category: newOffer.productId.category,
-        price: newOffer.productId.price
-      }
+      ...(isCustomOffer ? {} : {
+        product: {
+          id: newOffer.productId._id,
+          name: newOffer.productId.name,
+          category: newOffer.productId.category,
+          price: newOffer.productId.price
+        }
+      })
     });
 
     // Log the activity
     await logActivity({
       type: 'offer_created',
-      description: `Offer "${title}" created for product "${product.name}"`,
+      description: isCustomOffer
+        ? `Custom offer "${title}" created`
+        : `Offer "${title}" created for product "${product.name}"`,
       shopId: shop._id,
       userId: req.user.id,
       metadata: {
         offerTitle: title,
-        productName: product.name,
+        ...(isCustomOffer ? {} : { productName: product.name }),
         discountType,
         discountValue,
         maxUses: maxUses || 0

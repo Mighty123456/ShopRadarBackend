@@ -8,11 +8,11 @@ const offerSchema = new mongoose.Schema({
     required: true
   },
   
-  // Reference to the product this offer applies to
+  // Reference to the product this offer applies to (optional for custom offers)
   productId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Product',
-    required: true
+    required: function() { return !this.isCustomOffer; }
   },
   
   // Offer basic information
@@ -84,6 +84,20 @@ const offerSchema = new mongoose.Schema({
     type: String,
     enum: ['active', 'inactive', 'expired'],
     default: 'active'
+  },
+
+  // Custom (productless) offer fields
+  isCustomOffer: {
+    type: Boolean,
+    default: false
+  },
+  customImageUrl: {
+    type: String,
+    trim: true
+  },
+  customType: {
+    type: String,
+    trim: true
   },
   
   // Promotion status - only subscribed shopkeepers can promote offers
