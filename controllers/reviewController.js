@@ -1,4 +1,98 @@
 const Review = require('../models/reviewModel');
+const Shop = require('../models/shopModel');
+
+async function recalcShopRating(shopId) {
+  const agg = await Review.aggregate([
+    { $match: { shopId: new (require('mongoose')).Types.ObjectId(shopId) } },
+    { $group: { _id: '$shopId', avg: { $avg: '$rating' }, count: { $sum: 1 } } },
+  ]);
+  const avg = agg.length ? Math.round((agg[0].avg + Number.EPSILON) * 10) / 10 : 0;
+  const count = agg.length ? agg[0].count : 0;
+  await Shop.findByIdAndUpdate(shopId, { rating: avg, reviewCount: count }, { new: true });
+  return { rating: avg, reviewCount: count };
+}
+
+exports.createOrUpdateReview = async (req, res) => {
+  try {
+    const { shopId } = req.params;
+    const { rating, comment } = req.body;
+
+    if (rating == null) {
+      return res.status(400).json({ success: false, message: 'Rating is required' });
+    }
+    if (rating < 1 || rating > 5) {
+      return res.status(400).json({ success: false, message: 'Rating must be between 1 and 5' });
+    }
+
+    const userId = req.user.id;
+
+    const review = await Review.findOneAndUpdate(
+      { shopId, userId },
+      { rating, comment, updatedAt: new Date() },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    );
+
+    const summary = await recalcShopRating(shopId);
+
+    res.status(200).json({ success: true, data: { review, summary } });
+  } catch (err) {
+    console.error('createOrUpdateReview error:', err);
+    res.status(500).json({ success: false, message: 'Failed to save review' });
+  }
+};
+
+exports.deleteReview = async (req, res) => {
+  try {
+    const { shopId } = req.params;
+    const userId = req.user.id;
+    await Review.findOneAndDelete({ shopId, userId });
+    const summary = await recalcShopRating(shopId);
+    res.json({ success: true, data: { summary } });
+  } catch (err) {
+    console.error('deleteReview error:', err);
+    res.status(500).json({ success: false, message: 'Failed to delete review' });
+  }
+};
+
+exports.getShopReviews = async (req, res) => {
+  try {
+    const { shopId } = req.params;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+    const [items, total] = await Promise.all([
+      Review.find({ shopId }).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+      Review.countDocuments({ shopId }),
+    ]);
+
+    res.json({
+      success: true,
+      data: items,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(total / limit),
+        total,
+      },
+    });
+  } catch (err) {
+    console.error('getShopReviews error:', err);
+    res.status(500).json({ success: false, message: 'Failed to fetch reviews' });
+  }
+};
+
+exports.getShopRatingSummary = async (req, res) => {
+  try {
+    const { shopId } = req.params;
+    const shop = await Shop.findById(shopId).select('rating reviewCount').lean();
+    if (!shop) return res.status(404).json({ success: false, message: 'Shop not found' });
+    res.json({ success: true, data: { rating: shop.rating || 0, reviewCount: shop.reviewCount || 0 } });
+  } catch (err) {
+    console.error('getShopRatingSummary error:', err);
+    res.status(500).json({ success: false, message: 'Failed to fetch rating summary' });
+  }
+};
+
+const Review = require('../models/reviewModel');
 const User = require('../models/userModel');
 const Shop = require('../models/shopModel');
 const { logActivity } = require('./activityController');

@@ -1,6 +1,50 @@
 const mongoose = require('mongoose');
 
 const reviewSchema = new mongoose.Schema({
+  shopId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Shop',
+    required: true,
+    index: true,
+  },
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true,
+  },
+  rating: {
+    type: Number,
+    required: true,
+    min: 1,
+    max: 5,
+  },
+  comment: {
+    type: String,
+    trim: true,
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now,
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now,
+  },
+});
+
+reviewSchema.index({ shopId: 1, userId: 1 }, { unique: true });
+
+reviewSchema.pre('save', function(next) {
+  this.updatedAt = new Date();
+  next();
+});
+
+module.exports = mongoose.model('Review', reviewSchema);
+
+const mongoose = require('mongoose');
+
+const reviewSchema = new mongoose.Schema({
   // Reference to the user who wrote the review
   userId: {
     type: mongoose.Schema.Types.ObjectId,
