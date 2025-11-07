@@ -256,6 +256,101 @@ class EmailService {
 
     return this._sendWithRetry(mailOptions, 'Shop verification email');
   }
+
+  async sendSubscriptionApprovalEmail(email, shopName, planType, endDate) {
+    if (!this.emailConfigured) {
+      console.log(`Mock subscription approval sent to ${email}: ${shopName} - ${planType}`);
+      return true;
+    }
+
+    const formattedEndDate = new Date(endDate).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+
+    const mailOptions = {
+      from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
+      to: email,
+      subject: 'ShopRadar - Subscription Approved!',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background: #667eea; color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+            <h1 style="margin: 0; font-size: 28px;">ShopRadar</h1>
+            <p style="margin: 10px 0 0 0;">Subscription Approved</p>
+          </div>
+          <div style="background: white; padding: 30px; border: 1px solid #e0e0e0; border-top: none; border-radius: 0 0 10px 10px;">
+            <div style="text-align: center; margin-bottom: 30px;">
+              <div style="font-size: 48px; margin-bottom: 15px;">🎉</div>
+              <h2 style="color: #333;">Congratulations!</h2>
+              <p style="color: #10b981; font-size: 18px; font-weight: bold;">
+                Your Subscription Has Been Approved
+              </p>
+            </div>
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 25px;">
+              <p style="color: #333; margin: 0 0 10px 0;"><strong>Shop Name:</strong> ${shopName}</p>
+              <p style="color: #333; margin: 0 0 10px 0;"><strong>Plan:</strong> ${planType.charAt(0).toUpperCase() + planType.slice(1)}</p>
+              <p style="color: #333; margin: 0;"><strong>Valid Until:</strong> ${formattedEndDate}</p>
+            </div>
+            <div style="background: #e0f2fe; border-left: 4px solid #0ea5e9; padding: 15px; border-radius: 4px; margin-bottom: 25px;">
+              <h3 style="color: #0c4a6e; margin: 0 0 10px 0;">What's Next?</h3>
+              <p style="color: #0c4a6e; margin: 0;">
+                You can now promote your offers to get more visibility! Go to your dashboard and start promoting your offers to reach more customers.
+              </p>
+            </div>
+            <div style="text-align: center; margin-top: 30px;">
+              <a href="#" style="background: #667eea; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; display: inline-block;">
+                Go to Dashboard
+              </a>
+            </div>
+          </div>
+        </div>
+      `
+    };
+
+    return this._sendWithRetry(mailOptions, 'Subscription approval email');
+  }
+
+  async sendSubscriptionRejectionEmail(email, shopName, reason) {
+    if (!this.emailConfigured) {
+      console.log(`Mock subscription rejection sent to ${email}: ${shopName}`);
+      return true;
+    }
+
+    const mailOptions = {
+      from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
+      to: email,
+      subject: 'ShopRadar - Subscription Request Update',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background: #667eea; color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+            <h1 style="margin: 0; font-size: 28px;">ShopRadar</h1>
+            <p style="margin: 10px 0 0 0;">Subscription Request</p>
+          </div>
+          <div style="background: white; padding: 30px; border: 1px solid #e0e0e0; border-top: none; border-radius: 0 0 10px 10px;">
+            <div style="text-align: center; margin-bottom: 30px;">
+              <div style="font-size: 48px; margin-bottom: 15px;">📋</div>
+              <h2 style="color: #333;">${shopName}</h2>
+              <p style="color: #f59e0b; font-size: 18px; font-weight: bold;">
+                Subscription Request Needs Attention
+              </p>
+            </div>
+            <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; border-radius: 4px; margin-bottom: 25px;">
+              <h3 style="color: #92400e; margin: 0 0 10px 0;">Admin Notes:</h3>
+              <p style="color: #92400e; margin: 0;">${reason}</p>
+            </div>
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 25px;">
+              <p style="color: #333; margin: 0;">
+                Please review the admin notes above and resubmit your subscription request with the necessary corrections.
+              </p>
+            </div>
+          </div>
+        </div>
+      `
+    };
+
+    return this._sendWithRetry(mailOptions, 'Subscription rejection email');
+  }
 }
 
 module.exports = new EmailService();

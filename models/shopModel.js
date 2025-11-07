@@ -171,6 +171,33 @@ const shopSchema = new mongoose.Schema({
     min: 0
   },
   
+  // Subscription fields
+  subscription: {
+    plan: {
+      type: String,
+      enum: ['free', 'basic', 'premium', 'enterprise'],
+      default: 'free'
+    },
+    status: {
+      type: String,
+      enum: ['active', 'expired', 'cancelled', 'pending'],
+      default: 'pending'
+    },
+    startDate: {
+      type: Date
+    },
+    endDate: {
+      type: Date
+    },
+    approvedAt: {
+      type: Date
+    },
+    approvedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Admin'
+    }
+  },
+  
   // Timestamps
   createdAt: { 
     type: Date, 

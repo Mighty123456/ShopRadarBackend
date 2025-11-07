@@ -418,6 +418,166 @@ exports.toggleOfferStatus = async (req, res) => {
   }
 };
 
+// Promote an offer (only for subscribed shopkeepers)
+exports.promoteOffer = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { promotionDuration } = req.body; // Duration in days, default 7
+
+    // Get shop ID from authenticated user
+    const shop = await Shop.findOne({ ownerId: req.user.id });
+    if (!shop) {
+      return res.status(404).json({
+        success: false,
+        message: 'Shop not found for this user'
+      });
+    }
+
+    // Check if shop has active subscription
+    if (!shop.subscription || 
+        shop.subscription.status !== 'active' || 
+        shop.subscription.plan === 'free') {
+      return res.status(403).json({
+        success: false,
+        message: 'Active subscription required to promote offers. Please subscribe first.',
+        requiresSubscription: true
+      });
+    }
+
+    // Check if subscription has expired
+    if (new Date() > shop.subscription.endDate) {
+      shop.subscription.status = 'expired';
+      await shop.save();
+      return res.status(403).json({
+        success: false,
+        message: 'Your subscription has expired. Please renew your subscription.',
+        subscriptionExpired: true
+      });
+    }
+
+    // Find the offer and verify ownership
+    const offer = await Offer.findOne({ _id: id, shopId: shop._id });
+    if (!offer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Offer not found or does not belong to this shop'
+      });
+    }
+
+    // Check if offer is active
+    if (offer.status !== 'active') {
+      return res.status(400).json({
+        success: false,
+        message: 'Only active offers can be promoted'
+      });
+    }
+
+    // Set promotion details
+    const duration = promotionDuration || 7; // Default 7 days
+    const now = new Date();
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + duration);
+
+    offer.isPromoted = true;
+    offer.promotedAt = now;
+    offer.promotionExpiresAt = expiresAt;
+    await offer.save();
+    await offer.populate('productId', 'name category price images');
+
+    // Log the activity
+    await logActivity({
+      type: 'offer_promoted',
+      description: `Offer "${offer.title}" promoted`,
+      shopId: shop._id,
+      userId: req.user.id,
+      metadata: {
+        offerId: offer._id,
+        offerTitle: offer.title,
+        promotionDuration: duration,
+        expiresAt: expiresAt
+      },
+      severity: 'low',
+      status: 'success',
+      ipAddress: req.ip || req.connection.remoteAddress,
+      userAgent: req.get('User-Agent')
+    });
+
+    res.json({
+      success: true,
+      message: 'Offer promoted successfully! It will be visible in the featured offers section.',
+      data: offer
+    });
+
+  } catch (error) {
+    console.error('Promote offer error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to promote offer'
+    });
+  }
+};
+
+// Unpromote an offer
+exports.unpromoteOffer = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Get shop ID from authenticated user
+    const shop = await Shop.findOne({ ownerId: req.user.id });
+    if (!shop) {
+      return res.status(404).json({
+        success: false,
+        message: 'Shop not found for this user'
+      });
+    }
+
+    // Find the offer and verify ownership
+    const offer = await Offer.findOne({ _id: id, shopId: shop._id });
+    if (!offer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Offer not found or does not belong to this shop'
+      });
+    }
+
+    // Remove promotion
+    offer.isPromoted = false;
+    offer.promotedAt = null;
+    offer.promotionExpiresAt = null;
+    await offer.save();
+    await offer.populate('productId', 'name category price images');
+
+    // Log the activity
+    await logActivity({
+      type: 'offer_unpromoted',
+      description: `Offer "${offer.title}" promotion removed`,
+      shopId: shop._id,
+      userId: req.user.id,
+      metadata: {
+        offerId: offer._id,
+        offerTitle: offer.title
+      },
+      severity: 'low',
+      status: 'success',
+      ipAddress: req.ip || req.connection.remoteAddress,
+      userAgent: req.get('User-Agent')
+    });
+
+    res.json({
+      success: true,
+      message: 'Offer promotion removed successfully',
+      data: offer
+    });
+
+  } catch (error) {
+    console.error('Unpromote offer error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to remove offer promotion'
+    });
+  }
+};
+
 // Admin Methods
 
 // Clean up offers with null references (admin utility)
@@ -615,6 +775,7 @@ exports.getFeaturedOffers = async (req, res) => {
 
     // Optimize: Use populate with select to only fetch needed fields
     // Get featured offers with shop and product details using optimized populate
+    // Prioritize promoted offers by sorting: promoted first, then by creation date
     const offers = await Offer.find(offerFilter)
       .populate({
         path: 'shopId',
@@ -625,7 +786,7 @@ exports.getFeaturedOffers = async (req, res) => {
         path: 'productId',
         select: 'name category price images'
       })
-      .sort({ createdAt: -1 })
+      .sort({ isPromoted: -1, createdAt: -1 }) // Promoted offers first, then by creation date
       .limit(limit * 2) // Fetch more to account for filtered out items
       .lean(); // Use lean() for faster queries (returns plain JS objects)
 
@@ -680,6 +841,9 @@ exports.getFeaturedOffers = async (req, res) => {
           maxUses: offer.maxUses || 0,
           currentUses: offer.currentUses || 0,
           status: offer.status,
+          isPromoted: offer.isPromoted || false,
+          promotedAt: offer.promotedAt || null,
+          promotionExpiresAt: offer.promotionExpiresAt || null,
           distance: distanceKm, // Distance in kilometers
           shop: {
             id: offer.shopId._id,
@@ -707,6 +871,13 @@ exports.getFeaturedOffers = async (req, res) => {
           return offer.distance <= 8; // Only show offers within 8km
         }
         // If no location provided, show all offers (fallback)
+        return true;
+      })
+      // Filter out expired promotions
+      .filter(offer => {
+        if (offer.isPromoted && offer.promotionExpiresAt) {
+          return new Date(offer.promotionExpiresAt) > now;
+        }
         return true;
       })
       .slice(0, limit); // Limit to requested amount after filtering

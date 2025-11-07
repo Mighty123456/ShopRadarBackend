@@ -29,5 +29,7 @@ router.get('/:id', offerController.getOffer);                    // Get specific
 router.put('/:id', offerController.updateOffer);                 // Update offer
 router.delete('/:id', offerController.deleteOffer);              // Delete offer
 router.patch('/:id/toggle-status', offerController.toggleOfferStatus); // Toggle offer status
+router.post('/:id/promote', offerController.promoteOffer);       // Promote offer
+router.post('/:id/unpromote', offerController.unpromoteOffer);   // Unpromote offer
 
 module.exports = router;

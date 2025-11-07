@@ -19,6 +19,7 @@ const mlRoutes = require('./routes/mlRoutes');
 const searchRoutes = require('./routes/searchRoutes');
 const rankingRoutes = require('./routes/rankingRoutes');
 const categoryRoutes = require('./routes/categoryRoutes');
+const subscriptionRequestRoutes = require('./routes/subscriptionRequestRoutes');
 // Removed Google passport strategy initialization
 const websocketService = require('./services/websocketService');
 const updateLastActive = require('./middleware/updateLastActive');
@@ -97,6 +98,7 @@ app.use('/api/ml', mlRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/ranking', rankingRoutes);
 app.use('/api/categories', categoryRoutes);
+app.use('/api/subscription', subscriptionRequestRoutes);
 
 app.get('/', (req, res) => {
   res.json({ 

@@ -86,6 +86,20 @@ const offerSchema = new mongoose.Schema({
     default: 'active'
   },
   
+  // Promotion status - only subscribed shopkeepers can promote offers
+  isPromoted: {
+    type: Boolean,
+    default: false
+  },
+  
+  promotedAt: {
+    type: Date
+  },
+  
+  promotionExpiresAt: {
+    type: Date
+  },
+  
   // Timestamps
   createdAt: {
     type: Date,
