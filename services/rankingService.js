@@ -16,15 +16,14 @@ class RankingService {
     this.clusteringModels = new Map(); // Store clustering models
     this.rankingModels = new Map(); // Store ranking models
     this.featureWeights = {
-      // Base feature weights (tuned to prefer higher offers and closer distance)
-      rating: 0.20,
-      distance: 0.30, // closer matters more
-      price: 0.05,
-      popularity: 0.10,
+      // Base feature weights
+      rating: 0.25,
+      distance: 0.20,
+      price: 0.15,
+      popularity: 0.15,
       recency: 0.10,
-      category: 0.05,
-      status: 0.05,
-      offerDiscount: 0.15 // new explicit weight for discount strength
+      category: 0.10,
+      status: 0.05
     };
     this.modelUpdateInterval = 24 * 60 * 60 * 1000; // 24 hours
     this.lastModelUpdate = new Date(0);
@@ -172,7 +171,7 @@ class RankingService {
         const rating = Number(shop.rating || 0);
         score += (Math.max(0, Math.min(rating, 5)) / 5.0) * 25.0;
 
-        // Offers factor: larger weight to discount percent
+        // Offers factor: +15 baseline if any active offer, plus up to +10 for best percent
         let bestDiscount = 0;
         try {
           const now = new Date();
@@ -183,14 +182,13 @@ class RankingService {
             endDate: { $gte: now }
           }).select('discountType discountValue');
           if (offers && offers.length > 0) {
-            score += 10.0; // baseline for having offers
+            score += 15.0;
             for (const off of offers) {
               if (String(off.discountType).toLowerCase() === 'percentage') {
                 bestDiscount = Math.max(bestDiscount, Number(off.discountValue || 0));
               }
             }
-            // weight discount percent higher
-            score += (Math.max(0, Math.min(bestDiscount, 100)) / 100.0) * 20.0;
+            score += (Math.max(0, Math.min(bestDiscount, 100)) / 100.0) * 10.0;
           }
         } catch (_) { /* ignore offer failures */ }
 
@@ -442,13 +440,6 @@ class RankingService {
       const maxDistance = 50; // km
       const distanceScore = Math.max(0, 1 - (feature.distance / maxDistance));
       score += distanceScore * this.featureWeights.distance;
-
-      // Offer discount component (for offers ranking or if encoded in shop features)
-      if (feature.discountValue !== undefined) {
-        const discountPct = feature.discountType ? feature.discountValue : 0; // only percentage counts here
-        const discountScore = Math.max(0, Math.min(discountPct, 100)) / 100;
-        score += discountScore * this.featureWeights.offerDiscount;
-      }
       
       // Price component (0-1, based on user preferences)
       if (feature.productPrice) {
