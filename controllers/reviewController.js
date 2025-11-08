@@ -1,5 +1,8 @@
 const Review = require('../models/reviewModel');
 const Shop = require('../models/shopModel');
+const User = require('../models/userModel');
+const { logActivity } = require('./activityController');
+const sentimentAnalysisService = require('../services/sentimentAnalysisService');
 
 async function recalcShopRating(shopId) {
   const agg = await Review.aggregate([
@@ -10,6 +13,36 @@ async function recalcShopRating(shopId) {
   const count = agg.length ? agg[0].count : 0;
   await Shop.findByIdAndUpdate(shopId, { rating: avg, reviewCount: count }, { new: true });
   return { rating: avg, reviewCount: count };
+}
+
+// Helper function to update shop rating
+async function updateShopRating(shopId) {
+  try {
+    // Calculate average rating and count for the shop
+    const ratingStats = await Review.aggregate([
+      { $match: { shopId: shopId, status: 'active' } },
+      {
+        $group: {
+          _id: null,
+          averageRating: { $avg: '$rating' },
+          reviewCount: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const averageRating = ratingStats.length > 0 ? ratingStats[0].averageRating : 0;
+    const reviewCount = ratingStats.length > 0 ? ratingStats[0].reviewCount : 0;
+
+    // Update shop with new rating and review count
+    await Shop.findByIdAndUpdate(shopId, {
+      rating: Math.round(averageRating * 10) / 10, // Round to 1 decimal place
+      reviewCount: reviewCount
+    });
+
+    console.log(`Updated shop ${shopId} rating: ${averageRating}, count: ${reviewCount}`);
+  } catch (error) {
+    console.error('Error updating shop rating:', error);
+  }
 }
 
 exports.createOrUpdateReview = async (req, res) => {
@@ -43,40 +76,74 @@ exports.createOrUpdateReview = async (req, res) => {
 
 exports.deleteReview = async (req, res) => {
   try {
-    const { shopId } = req.params;
+    const { id, shopId } = req.params;
     const userId = req.user.id;
-    await Review.findOneAndDelete({ shopId, userId });
-    const summary = await recalcShopRating(shopId);
-    res.json({ success: true, data: { summary } });
+
+    let review;
+    let shopIdToUpdate;
+
+    // Handle both cases: /shops/:shopId/reviews and /:id
+    if (id) {
+      // Find the review by ID
+      review = await Review.findById(id).populate('shopId', 'shopName');
+      if (!review) {
+        return res.status(404).json({
+          success: false,
+          message: 'Review not found'
+        });
+      }
+
+      // Check if user owns this review
+      if (review.userId.toString() !== userId) {
+        return res.status(403).json({
+          success: false,
+          message: 'You can only delete your own reviews'
+        });
+      }
+
+      shopIdToUpdate = review.shopId._id;
+      const shopName = review.shopId.shopName;
+
+      // Delete the review
+      await Review.findByIdAndDelete(id);
+
+      // Update shop rating
+      await updateShopRating(shopIdToUpdate);
+
+      // Log the activity
+      await logActivity({
+        type: 'review_deleted',
+        description: `Review deleted for shop ${shopName}`,
+        userId: userId,
+        shopId: shopIdToUpdate,
+        metadata: {
+          reviewId: id,
+          shopName: shopName
+        },
+        severity: 'low',
+        status: 'success',
+        ipAddress: req.ip || req.connection.remoteAddress,
+        userAgent: req.get('User-Agent')
+      });
+
+      res.json({
+        success: true,
+        message: 'Review deleted successfully'
+      });
+    } else if (shopId) {
+      // Simple delete by shopId and userId
+      await Review.findOneAndDelete({ shopId, userId });
+      const summary = await recalcShopRating(shopId);
+      res.json({ success: true, data: { summary } });
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: 'Review ID or Shop ID is required'
+      });
+    }
   } catch (err) {
     console.error('deleteReview error:', err);
     res.status(500).json({ success: false, message: 'Failed to delete review' });
-  }
-};
-
-exports.getShopReviews = async (req, res) => {
-  try {
-    const { shopId } = req.params;
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const skip = (page - 1) * limit;
-    const [items, total] = await Promise.all([
-      Review.find({ shopId }).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
-      Review.countDocuments({ shopId }),
-    ]);
-
-    res.json({
-      success: true,
-      data: items,
-      pagination: {
-        currentPage: page,
-        totalPages: Math.ceil(total / limit),
-        total,
-      },
-    });
-  } catch (err) {
-    console.error('getShopReviews error:', err);
-    res.status(500).json({ success: false, message: 'Failed to fetch reviews' });
   }
 };
 
@@ -91,12 +158,6 @@ exports.getShopRatingSummary = async (req, res) => {
     res.status(500).json({ success: false, message: 'Failed to fetch rating summary' });
   }
 };
-
-const Review = require('../models/reviewModel');
-const User = require('../models/userModel');
-const Shop = require('../models/shopModel');
-const { logActivity } = require('./activityController');
-const sentimentAnalysisService = require('../services/sentimentAnalysisService');
 
 // Get all reviews with pagination and filtering
 exports.getAllReviews = async (req, res) => {
@@ -573,68 +634,6 @@ exports.updateReview = async (req, res) => {
   }
 };
 
-// Delete a review
-exports.deleteReview = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const userId = req.user.id;
-
-    // Find the review
-    const review = await Review.findById(id).populate('shopId', 'shopName');
-    if (!review) {
-      return res.status(404).json({
-        success: false,
-        message: 'Review not found'
-      });
-    }
-
-    // Check if user owns this review
-    if (review.userId.toString() !== userId) {
-      return res.status(403).json({
-        success: false,
-        message: 'You can only delete your own reviews'
-      });
-    }
-
-    const shopId = review.shopId._id;
-    const shopName = review.shopId.shopName;
-
-    // Delete the review
-    await Review.findByIdAndDelete(id);
-
-    // Update shop rating
-    await updateShopRating(shopId);
-
-    // Log the activity
-    await logActivity({
-      type: 'review_deleted',
-      description: `Review deleted for shop ${shopName}`,
-      userId: userId,
-      shopId: shopId,
-      metadata: {
-        reviewId: id,
-        shopName: shopName
-      },
-      severity: 'low',
-      status: 'success',
-      ipAddress: req.ip || req.connection.remoteAddress,
-      userAgent: req.get('User-Agent')
-    });
-
-    res.json({
-      success: true,
-      message: 'Review deleted successfully'
-    });
-
-  } catch (error) {
-    console.error('Delete review error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to delete review'
-    });
-  }
-};
-
 // Get reviews for a specific shop
 exports.getShopReviews = async (req, res) => {
   try {
@@ -887,33 +886,3 @@ exports.reportReview = async (req, res) => {
     });
   }
 };
-
-// Helper function to update shop rating
-async function updateShopRating(shopId) {
-  try {
-    // Calculate average rating and count for the shop
-    const ratingStats = await Review.aggregate([
-      { $match: { shopId: shopId, status: 'active' } },
-      {
-        $group: {
-          _id: null,
-          averageRating: { $avg: '$rating' },
-          reviewCount: { $sum: 1 }
-        }
-      }
-    ]);
-
-    const averageRating = ratingStats.length > 0 ? ratingStats[0].averageRating : 0;
-    const reviewCount = ratingStats.length > 0 ? ratingStats[0].reviewCount : 0;
-
-    // Update shop with new rating and review count
-    await Shop.findByIdAndUpdate(shopId, {
-      rating: Math.round(averageRating * 10) / 10, // Round to 1 decimal place
-      reviewCount: reviewCount
-    });
-
-    console.log(`Updated shop ${shopId} rating: ${averageRating}, count: ${reviewCount}`);
-  } catch (error) {
-    console.error('Error updating shop rating:', error);
-  }
-}
