@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const reviewController = require('../controllers/reviewController');
-const { protect } = require('../middleware/authMiddleware');
 const adminAuthMiddleware = require('../middleware/adminAuthMiddleware');
 const authMiddleware = require('../middleware/authMiddleware');
 
@@ -10,10 +9,10 @@ const authMiddleware = require('../middleware/authMiddleware');
 router.get('/shop/:shopId', reviewController.getShopReviews);
 
 // Create/update a review for a shop (authenticated users)
-router.post('/shops/:shopId/reviews', protect, reviewController.createOrUpdateReview);
+router.post('/shops/:shopId/reviews', authMiddleware, reviewController.createOrUpdateReview);
 
 // Delete own review
-router.delete('/shops/:shopId/reviews', protect, reviewController.deleteReview);
+router.delete('/shops/:shopId/reviews', authMiddleware, reviewController.deleteReview);
 
 // Public: list reviews for a shop
 router.get('/shops/:shopId/reviews', reviewController.getShopReviews);
