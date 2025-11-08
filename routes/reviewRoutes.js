@@ -2,6 +2,12 @@ const express = require('express');
 const router = express.Router();
 const reviewController = require('../controllers/reviewController');
 const { protect } = require('../middleware/authMiddleware');
+const adminAuthMiddleware = require('../middleware/adminAuthMiddleware');
+const authMiddleware = require('../middleware/authMiddleware');
+
+// Public routes (no authentication required)
+// Get reviews for a specific shop (alternative route)
+router.get('/shop/:shopId', reviewController.getShopReviews);
 
 // Create/update a review for a shop (authenticated users)
 router.post('/shops/:shopId/reviews', protect, reviewController.createOrUpdateReview);
@@ -14,18 +20,6 @@ router.get('/shops/:shopId/reviews', reviewController.getShopReviews);
 
 // Public: rating summary for a shop
 router.get('/shops/:shopId/ratings', reviewController.getShopRatingSummary);
-
-module.exports = router;
-
-const express = require('express');
-const router = express.Router();
-const reviewController = require('../controllers/reviewController');
-const adminAuthMiddleware = require('../middleware/adminAuthMiddleware');
-const authMiddleware = require('../middleware/authMiddleware');
-
-// Public routes (no authentication required)
-// Get reviews for a specific shop
-router.get('/shop/:shopId', reviewController.getShopReviews);
 
 // User routes (require user authentication)
 router.use(authMiddleware);
