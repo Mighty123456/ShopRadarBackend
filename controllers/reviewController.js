@@ -5,22 +5,49 @@ const { logActivity } = require('./activityController');
 const sentimentAnalysisService = require('../services/sentimentAnalysisService');
 
 async function recalcShopRating(shopId) {
-  const agg = await Review.aggregate([
-    { $match: { shopId: new (require('mongoose')).Types.ObjectId(shopId) } },
-    { $group: { _id: '$shopId', avg: { $avg: '$rating' }, count: { $sum: 1 } } },
-  ]);
-  const avg = agg.length ? Math.round((agg[0].avg + Number.EPSILON) * 10) / 10 : 0;
-  const count = agg.length ? agg[0].count : 0;
-  await Shop.findByIdAndUpdate(shopId, { rating: avg, reviewCount: count }, { new: true });
-  return { rating: avg, reviewCount: count };
+  try {
+    const mongoose = require('mongoose');
+    
+    // Convert shopId to ObjectId if it's a string
+    const shopObjectId = typeof shopId === 'string' 
+      ? new mongoose.Types.ObjectId(shopId) 
+      : shopId;
+    
+    // Only count active reviews
+    const agg = await Review.aggregate([
+      { $match: { shopId: shopObjectId, status: 'active' } },
+      { $group: { _id: '$shopId', avg: { $avg: '$rating' }, count: { $sum: 1 } } },
+    ]);
+    
+    const avg = agg.length && agg[0].avg ? Math.round((agg[0].avg + Number.EPSILON) * 10) / 10 : 0;
+    const count = agg.length ? agg[0].count : 0;
+    
+    await Shop.findByIdAndUpdate(shopObjectId, { 
+      rating: avg, 
+      reviewCount: count 
+    }, { new: true });
+    
+    console.log(`Recalculated shop ${shopObjectId} rating: ${avg}, count: ${count}`);
+    return { rating: avg, reviewCount: count };
+  } catch (error) {
+    console.error('Error recalculating shop rating:', error);
+    throw error;
+  }
 }
 
 // Helper function to update shop rating
 async function updateShopRating(shopId) {
   try {
-    // Calculate average rating and count for the shop
+    const mongoose = require('mongoose');
+    
+    // Convert shopId to ObjectId if it's a string
+    const shopObjectId = typeof shopId === 'string' 
+      ? new mongoose.Types.ObjectId(shopId) 
+      : shopId;
+    
+    // Calculate average rating and count for the shop (only active reviews)
     const ratingStats = await Review.aggregate([
-      { $match: { shopId: shopId, status: 'active' } },
+      { $match: { shopId: shopObjectId, status: 'active' } },
       {
         $group: {
           _id: null,
@@ -30,18 +57,22 @@ async function updateShopRating(shopId) {
       }
     ]);
 
-    const averageRating = ratingStats.length > 0 ? ratingStats[0].averageRating : 0;
+    const averageRating = ratingStats.length > 0 && ratingStats[0].averageRating 
+      ? ratingStats[0].averageRating 
+      : 0;
     const reviewCount = ratingStats.length > 0 ? ratingStats[0].reviewCount : 0;
 
     // Update shop with new rating and review count
-    await Shop.findByIdAndUpdate(shopId, {
-      rating: Math.round(averageRating * 10) / 10, // Round to 1 decimal place
+    const finalRating = averageRating > 0 ? Math.round(averageRating * 10) / 10 : 0;
+    await Shop.findByIdAndUpdate(shopObjectId, {
+      rating: finalRating,
       reviewCount: reviewCount
-    });
+    }, { new: true });
 
-    console.log(`Updated shop ${shopId} rating: ${averageRating}, count: ${reviewCount}`);
+    console.log(`Updated shop ${shopObjectId} rating: ${finalRating}, count: ${reviewCount}`);
   } catch (error) {
     console.error('Error updating shop rating:', error);
+    throw error; // Re-throw to help with debugging
   }
 }
 

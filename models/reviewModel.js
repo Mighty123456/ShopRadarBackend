@@ -148,9 +148,14 @@ async function updateShopRating(shopId) {
     const Shop = require('./shopModel');
     const Review = mongoose.model('Review', reviewSchema);
     
+    // Convert shopId to ObjectId if it's a string
+    const shopObjectId = typeof shopId === 'string' 
+      ? new mongoose.Types.ObjectId(shopId) 
+      : shopId;
+    
     // Calculate average rating and count for the shop
     const ratingStats = await Review.aggregate([
-      { $match: { shopId: shopId, status: 'active' } },
+      { $match: { shopId: shopObjectId, status: 'active' } },
       {
         $group: {
           _id: null,
@@ -164,14 +169,15 @@ async function updateShopRating(shopId) {
     const reviewCount = ratingStats.length > 0 ? ratingStats[0].reviewCount : 0;
 
     // Update shop with new rating and review count
-    await Shop.findByIdAndUpdate(shopId, {
-      rating: Math.round(averageRating * 10) / 10, // Round to 1 decimal place
+    await Shop.findByIdAndUpdate(shopObjectId, {
+      rating: averageRating > 0 ? Math.round(averageRating * 10) / 10 : 0, // Round to 1 decimal place
       reviewCount: reviewCount
     });
 
-    console.log(`Updated shop ${shopId} rating: ${averageRating}, count: ${reviewCount}`);
+    console.log(`Updated shop ${shopObjectId} rating: ${averageRating}, count: ${reviewCount}`);
   } catch (error) {
     console.error('Error updating shop rating:', error);
+    throw error; // Re-throw to help with debugging
   }
 }
 
