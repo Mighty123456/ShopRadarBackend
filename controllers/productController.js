@@ -915,6 +915,14 @@ exports.createProductWithOffer = async (req, res) => {
         });
       }
       
+      // Ensure startDate is not in the future for immediate visibility
+      const now = new Date();
+      let parsedStart = new Date(offer.startDate);
+      if (parsedStart > now) {
+        parsedStart = new Date(now.getTime());
+        console.log(`[Create Product with Offer] Adjusted startDate to current time for immediate visibility`);
+      }
+      
       const offerData = {
         shopId: shop._id,
         productId: newProduct._id,
@@ -922,7 +930,7 @@ exports.createProductWithOffer = async (req, res) => {
         description: offer.description || '',
         discountType: offer.discountType,
         discountValue: offer.discountValue,
-        startDate: new Date(offer.startDate),
+        startDate: parsedStart,
         endDate: new Date(offer.endDate),
         maxUses: offer.maxUses || 0,
         status: 'active'
@@ -930,6 +938,42 @@ exports.createProductWithOffer = async (req, res) => {
       
       newOffer = new Offer(offerData);
       await newOffer.save();
+      
+      // Populate offer details for broadcasting
+      await newOffer.populate('productId', 'name category price images');
+      await newOffer.populate('shopId', 'shopName address phone location rating isLive verificationStatus isActive');
+      
+      // Broadcast new offer to all connected clients
+      websocketService.broadcastNewOffer({
+        id: newOffer._id,
+        title: newOffer.title,
+        description: newOffer.description,
+        discountType: newOffer.discountType,
+        discountValue: newOffer.discountValue,
+        startDate: newOffer.startDate,
+        endDate: newOffer.endDate,
+        isCustomOffer: false,
+        shop: {
+          id: newOffer.shopId._id,
+          name: newOffer.shopId.shopName,
+          address: newOffer.shopId.address,
+          rating: newOffer.shopId.rating || 0
+        },
+        product: {
+          id: newOffer.productId._id,
+          name: newOffer.productId.name,
+          category: newOffer.productId.category,
+          price: newOffer.productId.price
+        }
+      });
+      
+      // Broadcast featured offers refresh signal
+      try {
+        websocketService.broadcastFeaturedOffersUpdate({ refresh: true, newOfferId: newOffer._id.toString() });
+        console.log(`[Create Product with Offer] Broadcasted featured offers refresh signal for new offer: ${newOffer._id}`);
+      } catch (broadcastErr) {
+        console.error('[Create Product with Offer] Error broadcasting featured offers update:', broadcastErr);
+      }
     }
     
     // Log the activity

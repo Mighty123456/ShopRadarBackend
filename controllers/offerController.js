@@ -92,8 +92,15 @@ exports.createOffer = async (req, res) => {
 
     // Create offer with status derived from dates
     const now = new Date();
-    const parsedStart = new Date(startDate);
+    let parsedStart = new Date(startDate);
     const parsedEnd = new Date(endDate);
+    
+    // Ensure startDate is not in the future - if it is, set it to now for immediate visibility
+    if (parsedStart > now) {
+      parsedStart = new Date(now.getTime());
+      console.log(`[Create Offer] Adjusted startDate from ${startDate} to current time for immediate visibility`);
+    }
+    
     // Default to active (previous behavior), only mark expired if endDate already passed
     let derivedStatus = parsedEnd < now ? 'expired' : 'active';
 
@@ -150,6 +157,15 @@ exports.createOffer = async (req, res) => {
         }
       })
     });
+
+    // Also broadcast a featured offers update signal to force immediate refresh on all clients
+    // This triggers clients to fetch fresh data from the API
+    try {
+      websocketService.broadcastFeaturedOffersUpdate({ refresh: true, newOfferId: newOffer._id.toString() });
+      console.log(`[Create Offer] Broadcasted featured offers refresh signal for new offer: ${newOffer._id}`);
+    } catch (broadcastErr) {
+      console.error('[Create Offer] Error broadcasting featured offers update:', broadcastErr);
+    }
 
     // Log the activity
     await logActivity({
@@ -723,9 +739,11 @@ exports.getFeaturedOffers = async (req, res) => {
     console.log(`[Featured Offers] Fetching offers - lat: ${latitude}, lng: ${longitude}, radius: ${radius}`);
 
     // Build filter for active offers
+    // Include offers that have started (startDate <= now) or are starting within the next minute
+    // This ensures newly created offers appear immediately
     const offerFilter = {
       status: 'active',
-      startDate: { $lte: now },
+      startDate: { $lte: new Date(now.getTime() + 60000) }, // Allow offers starting within next minute
       endDate: { $gte: now }
     };
 
@@ -912,6 +930,13 @@ exports.getFeaturedOffers = async (req, res) => {
       .slice(0, limit); // Limit to requested amount after filtering
 
     console.log(`[Featured Offers] Returning ${transformedOffers.length} valid offers`);
+
+    // Set cache-control headers to prevent caching and ensure fresh data
+    res.set({
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
+    });
 
     res.json({
       success: true,

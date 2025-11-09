@@ -173,20 +173,25 @@ class WebSocketService {
   }
 
   // Broadcast featured offers update to all connected clients
-  broadcastFeaturedOffersUpdate(offers) {
+  // Accepts either an array of offers or a refresh signal object
+  broadcastFeaturedOffersUpdate(offersOrSignal) {
     if (!this.public) return;
 
     const offersData = {
       type: 'featured_offers_update',
       data: {
-        offers: offers,
+        ...(Array.isArray(offersOrSignal) ? { offers: offersOrSignal } : offersOrSignal),
         timestamp: new Date().toISOString()
       }
     };
 
     // Broadcast to all connected public clients
     this.public.emit('featured_offers_update', offersData);
-    console.log(`Broadcasted featured offers update: ${offers.length} offers`);
+    if (Array.isArray(offersOrSignal)) {
+      console.log(`Broadcasted featured offers update: ${offersOrSignal.length} offers`);
+    } else {
+      console.log(`Broadcasted featured offers refresh signal: ${JSON.stringify(offersOrSignal)}`);
+    }
   }
 
   // Broadcast new offer to all connected clients
