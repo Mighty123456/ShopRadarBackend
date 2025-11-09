@@ -464,6 +464,63 @@ exports.updateShopStatus = async (req, res) => {
   }
 };
 
+// Admin: Update shop information
+exports.updateShopInfo = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const mongoose = require('mongoose');
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid shop ID' });
+    }
+    
+    const {
+      shopName,
+      phone,
+      address,
+      state,
+      description,
+      category,
+      openingHours,
+      amenities,
+    } = req.body;
+    
+    const shop = await Shop.findById(id);
+    if (!shop) {
+      return res.status(404).json({ message: 'Shop not found' });
+    }
+    
+    // Update allowed fields
+    if (typeof shopName !== 'undefined') shop.shopName = shopName;
+    if (typeof phone !== 'undefined') shop.phone = phone;
+    if (typeof address !== 'undefined') shop.address = address;
+    if (typeof state !== 'undefined') shop.state = state;
+    if (typeof description !== 'undefined') shop.description = description;
+    if (typeof category !== 'undefined') shop.category = category;
+    if (typeof openingHours !== 'undefined') shop.openingHours = openingHours;
+    if (typeof amenities !== 'undefined' && Array.isArray(amenities)) shop.amenities = amenities;
+    
+    await shop.save();
+    
+    res.json({
+      message: 'Shop information updated successfully',
+      shop: {
+        _id: shop._id,
+        shopName: shop.shopName,
+        phone: shop.phone,
+        address: shop.address,
+        state: shop.state,
+        description: shop.description,
+        category: shop.category,
+        openingHours: shop.openingHours,
+        amenities: shop.amenities,
+      }
+    });
+  } catch (err) {
+    console.error('Update shop info error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 // ===== SHOP OWNER SPECIFIC CONTROLLERS =====
 
 // Get shop owner's own shop details
@@ -496,6 +553,7 @@ exports.updateMyShop = async (req, res) => {
       shopName,
       phone,
       address,
+      state,
       gpsAddress,
       location,
       description,
@@ -513,6 +571,7 @@ exports.updateMyShop = async (req, res) => {
     if (typeof shopName !== 'undefined') shop.shopName = shopName;
     if (typeof phone !== 'undefined') shop.phone = phone;
     if (typeof address !== 'undefined') shop.address = address;
+    if (typeof state !== 'undefined') shop.state = state;
     if (typeof gpsAddress !== 'undefined') shop.gpsAddress = gpsAddress;
     if (typeof description !== 'undefined') shop.description = description;
     if (typeof category !== 'undefined') shop.category = category;
@@ -536,6 +595,7 @@ exports.updateMyShop = async (req, res) => {
         shopName: shop.shopName,
         phone: shop.phone,
         address: shop.address,
+        state: shop.state,
         gpsAddress: shop.gpsAddress,
         description: shop.description,
         category: shop.category,

@@ -22,6 +22,9 @@ router.get('/admin/all', productController.getAllProducts);
 // Get product statistics
 router.get('/admin/stats', productController.getProductStats);
 
+// Get popular categories
+router.get('/admin/popular-categories', productController.getPopularCategories);
+
 // Get product by ID
 router.get('/admin/:id', productController.getProductById);
 

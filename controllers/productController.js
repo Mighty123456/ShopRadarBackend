@@ -569,6 +569,124 @@ exports.updateProductStatus = async (req, res) => {
   }
 };
 
+// Category normalization mapping - maps subcategories to main categories
+const normalizeCategory = (category) => {
+  if (!category) return 'Others';
+  
+  const normalized = category.trim();
+  const lower = normalized.toLowerCase();
+  
+  // Electronics subcategories
+  const electronicsKeywords = [
+    'headphone', 'headphones', 'earphone', 'earphones', 'earbuds', 'speaker', 'speakers',
+    'phone', 'smartphone', 'mobile', 'tablet', 'laptop', 'computer', 'pc', 'desktop',
+    'camera', 'tv', 'television', 'monitor', 'keyboard', 'mouse', 'gaming', 'console',
+    'audio', 'video', 'electronic', 'gadget', 'device', 'charger', 'cable', 'wireless',
+    'bluetooth', 'usb', 'battery', 'power bank', 'smartwatch', 'watch', 'fitness tracker'
+  ];
+  
+  // Clothing subcategories
+  const clothingKeywords = [
+    'clothing', 'clothes', 'apparel', 'shirt', 't-shirt', 'pants', 'jeans', 'dress',
+    'skirt', 'jacket', 'coat', 'sweater', 'hoodie', 'sweatshirt', 'shorts', 'underwear',
+    'socks', 'shoes', 'footwear', 'sneakers', 'boots', 'sandals', 'hat', 'cap', 'accessory'
+  ];
+  
+  // Food subcategories
+  const foodKeywords = [
+    'food', 'beverage', 'drink', 'snack', 'grocery', 'restaurant', 'cafe', 'bakery',
+    'fruit', 'vegetable', 'meat', 'dairy', 'bread', 'rice', 'pasta', 'soup', 'sauce'
+  ];
+  
+  // Books subcategories
+  const booksKeywords = [
+    'book', 'books', 'novel', 'magazine', 'comic', 'manga', 'textbook', 'education',
+    'literature', 'fiction', 'non-fiction', 'ebook', 'audiobook', 'journal'
+  ];
+  
+  // Check if category matches any subcategory
+  if (electronicsKeywords.some(keyword => lower.includes(keyword))) {
+    return 'Electronics';
+  }
+  if (clothingKeywords.some(keyword => lower.includes(keyword))) {
+    return 'Clothing';
+  }
+  if (foodKeywords.some(keyword => lower.includes(keyword))) {
+    return 'Food';
+  }
+  if (booksKeywords.some(keyword => lower.includes(keyword))) {
+    return 'Books';
+  }
+  
+  // If it's already a main category, return as is
+  const mainCategories = ['Electronics', 'Clothing', 'Food', 'Books', 'Others'];
+  if (mainCategories.includes(normalized)) {
+    return normalized;
+  }
+  
+  // Default to Others for unrecognized categories
+  return 'Others';
+};
+
+// Get popular categories with percentages
+exports.getPopularCategories = async (req, res) => {
+  try {
+    // Get all products with their categories
+    const products = await Product.find({ status: 'active' }).select('category');
+    
+    // Normalize and group categories
+    const categoryMap = {};
+    products.forEach(product => {
+      const normalizedCategory = normalizeCategory(product.category);
+      categoryMap[normalizedCategory] = (categoryMap[normalizedCategory] || 0) + 1;
+    });
+    
+    // Convert to array and sort
+    const categoryStats = Object.entries(categoryMap)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
+
+    // Calculate total products for percentage calculation
+    const totalProducts = products.length;
+
+    // Transform data to match frontend expectations
+    const categories = categoryStats.map(cat => ({
+      name: cat.name,
+      count: cat.count,
+      percentage: totalProducts > 0 ? Math.round((cat.count / totalProducts) * 100) : 0
+    }));
+
+    // If we have less than 5 categories, fill with empty ones for display
+    const defaultCategories = ['Electronics', 'Clothing', 'Food', 'Books', 'Others'];
+    const existingNames = new Set(categories.map(c => c.name));
+    
+    defaultCategories.forEach(catName => {
+      if (!existingNames.has(catName)) {
+        categories.push({
+          name: catName,
+          count: 0,
+          percentage: 0
+        });
+      }
+    });
+
+    // Sort by count descending and take top 5
+    categories.sort((a, b) => b.count - a.count);
+    const topCategories = categories.slice(0, 5);
+
+    res.json({
+      success: true,
+      data: topCategories
+    });
+  } catch (error) {
+    console.error('Get popular categories error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch popular categories'
+    });
+  }
+};
+
 // Get product statistics (optionally per shop via ?shopId=...)
 exports.getProductStats = async (req, res) => {
   try {

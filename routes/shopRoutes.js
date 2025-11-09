@@ -34,6 +34,7 @@ router.post('/products/unified', authMiddleware, shopOwnershipMiddleware, requir
 router.get('/admin/all', adminAuthMiddleware, shopController.getAllShops);
 router.get('/admin/stats', adminAuthMiddleware, shopController.getShopStats);
 router.get('/admin/:id', adminAuthMiddleware, shopController.getShopById);
+router.put('/admin/:id', adminAuthMiddleware, shopController.updateShopInfo);
 router.put('/admin/:id/verify', adminAuthMiddleware, shopController.verifyShop);
 router.put('/admin/:id/status', adminAuthMiddleware, shopController.updateShopStatus);
 

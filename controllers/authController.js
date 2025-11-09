@@ -17,6 +17,7 @@ exports.register = async (req, res) => {
       licenseNumber,
       phone,
       address,
+      state,
       licenseDocument,
       // Location verification data
       location,
@@ -84,6 +85,7 @@ exports.register = async (req, res) => {
         licenseNumber,
         phone,
         address,
+        state: state || null,
         isLocationVerified: isLocationVerified || false,
         verificationStatus: 'pending'
       };

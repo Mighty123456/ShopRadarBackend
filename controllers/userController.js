@@ -221,6 +221,54 @@ exports.getUserStats = async (req, res) => {
   }
 };
 
+// Get growth trends (monthly data for users and shops)
+exports.getGrowthTrends = async (req, res) => {
+  try {
+    const { months = 6 } = req.query; // Default to last 6 months
+    const numMonths = parseInt(months);
+    
+    const now = new Date();
+    const trends = [];
+    
+    // Generate data for each month
+    for (let i = numMonths - 1; i >= 0; i--) {
+      const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59, 999);
+      
+      // Get month name
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const monthName = monthNames[monthStart.getMonth()];
+      
+      // Count users created in this month
+      const users = await User.countDocuments({
+        createdAt: { $gte: monthStart, $lte: monthEnd }
+      });
+      
+      // Count shops created in this month
+      const shops = await Shop.countDocuments({
+        createdAt: { $gte: monthStart, $lte: monthEnd }
+      });
+      
+      trends.push({
+        month: monthName,
+        users,
+        shops
+      });
+    }
+    
+    res.json({
+      success: true,
+      data: trends
+    });
+  } catch (error) {
+    console.error('Get growth trends error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch growth trends'
+    });
+  }
+};
+
 // Get active users data
 exports.getActiveUsers = async (req, res) => {
   try {
