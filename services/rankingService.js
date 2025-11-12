@@ -155,23 +155,10 @@ class RankingService {
           ? this.calculateDistance(userLocation, shop.location.coordinates)
           : 0;
 
-        // Distance factor
+        // Prioritize offer value and distance
         let score = 0;
-        if (distanceKm > 0) {
-          if (distanceKm < 1.0) score += 40.0;
-          else if (distanceKm < 5.0) score += 30.0;
-          else if (distanceKm < 10.0) score += 20.0;
-          else if (distanceKm < 20.0) score += 10.0;
-          else score += 5.0;
-        } else {
-          score += 15.0;
-        }
 
-        // Rating factor (max 25)
-        const rating = Number(shop.rating || 0);
-        score += (Math.max(0, Math.min(rating, 5)) / 5.0) * 25.0;
-
-        // Offers factor: +15 baseline if any active offer, plus up to +10 for best percent
+        // Offer value: Primary factor (multiply by 1000 to ensure it dominates)
         let bestDiscount = 0;
         try {
           const now = new Date();
@@ -182,24 +169,37 @@ class RankingService {
             endDate: { $gte: now }
           }).select('discountType discountValue');
           if (offers && offers.length > 0) {
-            score += 15.0;
             for (const off of offers) {
               if (String(off.discountType).toLowerCase() === 'percentage') {
                 bestDiscount = Math.max(bestDiscount, Number(off.discountValue || 0));
               }
             }
-            score += (Math.max(0, Math.min(bestDiscount, 100)) / 100.0) * 10.0;
+            // Multiply by 1000 so higher discounts always rank first
+            score += bestDiscount * 1000.0;
           }
         } catch (_) { /* ignore offer failures */ }
 
-        // Open/Live status factor
-        if (shop.isLive === true) {
-          score += 10.0;
+        // Distance: Secondary factor (inverse - closer is better, multiply by 100)
+        if (distanceKm > 0) {
+          // Use inverse distance so closer shops get higher scores
+          // Multiply by 100 to ensure it's the secondary factor after offers
+          score += (100.0 / (distanceKm + 0.001)); // Add small value to avoid division by zero
+        } else {
+          score += 50.0; // Default score if distance is unknown
         }
 
-        // Review count factor (max 5)
+        // Other factors (much smaller weights)
+        const rating = Number(shop.rating || 0);
+        score += (Math.max(0, Math.min(rating, 5)) / 5.0) * 5.0;
+
+        // Open/Live status factor
+        if (shop.isLive === true) {
+          score += 2.0;
+        }
+
+        // Review count factor (max 1)
         const reviewCount = Number(shop.reviewCount || 0);
-        score += Math.max(0, Math.min(reviewCount / 100.0, 5.0));
+        score += Math.max(0, Math.min(reviewCount / 100.0, 1.0));
 
         // Provide reason tags similar to frontend
         const reasons = [];
