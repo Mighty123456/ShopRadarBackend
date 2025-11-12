@@ -3,6 +3,7 @@ const Shop = require('../models/shopModel');
 const Offer = require('../models/offerModel');
 const { logActivity } = require('./activityController');
 const websocketService = require('../services/websocketService');
+const fcmNotificationService = require('../services/fcmNotificationService');
 const { expandQueryTerms, computeProductRelevance } = require('../services/searchService');
 const { handleSingleFile } = require('./uploadController');
 const { uploadBuffer, isCloudinaryConfigured } = require('../services/cloudinaryService');
@@ -1116,6 +1117,22 @@ exports.createProductWithOffer = async (req, res) => {
     // Broadcast product count update (total products)
     const totalProducts = await Product.countDocuments();
     websocketService.broadcastProductCountUpdate(totalProducts);
+
+    // Send push notification for new offer (if created with product)
+    if (newOffer && newOffer.status === 'active') {
+      try {
+        const isFeatured = newOffer.discountValue > 20;
+        
+        // Send notification for featured offers (discount > 20%)
+        if (isFeatured) {
+          await fcmNotificationService.notifyNewOffer(newOffer, newOffer.shopId);
+          console.log(`📢 Sent push notification for new featured offer: ${newOffer.title}`);
+        }
+      } catch (notifErr) {
+        // Don't fail product creation if notification fails
+        console.error('Failed to send push notification for new offer:', notifErr);
+      }
+    }
 
     res.status(201).json({
       success: true,

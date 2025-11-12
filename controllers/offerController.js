@@ -3,6 +3,7 @@ const Shop = require('../models/shopModel');
 const Product = require('../models/productModel');
 const { logActivity } = require('./activityController');
 const websocketService = require('../services/websocketService');
+const fcmNotificationService = require('../services/fcmNotificationService');
 
 // Get all offers for a shop
 exports.getMyOffers = async (req, res) => {
@@ -196,6 +197,24 @@ exports.createOffer = async (req, res) => {
       console.error('Failed to broadcast offer count:', countErr);
     }
 
+    // Send push notification for new offer (special deals and featured offers)
+    try {
+      // Only send notifications for active offers that are visible on home screen
+      if (derivedStatus === 'active') {
+        const isSpecialDeal = !!isCustomOffer;
+        const isFeatured = newOffer.discountValue > 20 || !!newOffer.isPromoted;
+        
+        // Send notification for special deals or featured offers
+        if (isSpecialDeal || isFeatured) {
+          await fcmNotificationService.notifyNewOffer(newOffer, newOffer.shopId);
+          console.log(`📢 Sent push notification for new ${isSpecialDeal ? 'special deal' : 'featured offer'}: ${title}`);
+        }
+      }
+    } catch (notifErr) {
+      // Don't fail offer creation if notification fails
+      console.error('Failed to send push notification for new offer:', notifErr);
+    }
+
     res.status(201).json({
       success: true,
       message: 'Offer created successfully',
@@ -247,6 +266,7 @@ exports.updateOffer = async (req, res) => {
 
     await offer.save();
     await offer.populate('productId', 'name category price images');
+    await offer.populate('shopId', 'shopName address phone location rating isLive verificationStatus isActive');
 
     // Log the activity
     await logActivity({
@@ -272,6 +292,23 @@ exports.updateOffer = async (req, res) => {
       websocketService.broadcastOfferCountUpdate(totalOffers);
     } catch (countErr) {
       console.error('Failed to broadcast offer count:', countErr);
+    }
+
+    // Send push notification if offer becomes active and is special/featured
+    try {
+      if (offer.status === 'active') {
+        const isSpecialDeal = !!offer.isCustomOffer;
+        const isFeatured = offer.discountValue > 20 || !!offer.isPromoted;
+        
+        // Only send notification if it's a special deal or featured offer
+        if (isSpecialDeal || isFeatured) {
+          await fcmNotificationService.notifyNewOffer(offer, offer.shopId);
+          console.log(`📢 Sent push notification for updated ${isSpecialDeal ? 'special deal' : 'featured offer'}: ${offer.title}`);
+        }
+      }
+    } catch (notifErr) {
+      // Don't fail offer update if notification fails
+      console.error('Failed to send push notification for updated offer:', notifErr);
     }
 
     res.json({
@@ -520,6 +557,7 @@ exports.promoteOffer = async (req, res) => {
     offer.promotionExpiresAt = expiresAt;
     await offer.save();
     await offer.populate('productId', 'name category price images');
+    await offer.populate('shopId', 'shopName address phone location rating isLive verificationStatus isActive');
 
     // Log the activity
     await logActivity({
@@ -538,6 +576,15 @@ exports.promoteOffer = async (req, res) => {
       ipAddress: req.ip || req.connection.remoteAddress,
       userAgent: req.get('User-Agent')
     });
+
+    // Send push notification for promoted offer (now featured)
+    try {
+      await fcmNotificationService.notifyNewOffer(offer, offer.shopId);
+      console.log(`📢 Sent push notification for promoted featured offer: ${offer.title}`);
+    } catch (notifErr) {
+      // Don't fail promotion if notification fails
+      console.error('Failed to send push notification for promoted offer:', notifErr);
+    }
 
     res.json({
       success: true,

@@ -1,5 +1,7 @@
 const Notification = require('../models/notificationModel');
+const DeviceToken = require('../models/deviceTokenModel');
 const { logActivity } = require('./activityController');
+const fcmNotificationService = require('../services/fcmNotificationService');
 
 // Get all notifications with pagination and filtering
 exports.getAllNotifications = async (req, res) => {
@@ -301,6 +303,70 @@ exports.sendNotification = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to send notification'
+    });
+  }
+};
+
+// Register device for push notifications
+exports.registerDevice = async (req, res) => {
+  try {
+    const { token, platform, appVersion, deviceInfo } = req.body;
+    const userId = req.user.id;
+
+    if (!token) {
+      return res.status(400).json({
+        success: false,
+        message: 'Device token is required'
+      });
+    }
+
+    // Normalize platform
+    const normalizedPlatform = platform?.toLowerCase() || 'android';
+    if (!['android', 'ios', 'web'].includes(normalizedPlatform)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid platform. Must be android, ios, or web'
+      });
+    }
+
+    // Check if token already exists
+    let deviceToken = await DeviceToken.findOne({ token });
+
+    if (deviceToken) {
+      // Update existing token
+      deviceToken.userId = userId;
+      deviceToken.platform = normalizedPlatform;
+      deviceToken.appVersion = appVersion || deviceToken.appVersion;
+      deviceToken.deviceInfo = deviceInfo || deviceToken.deviceInfo;
+      deviceToken.isActive = true;
+      deviceToken.lastUsed = new Date();
+      await deviceToken.save();
+    } else {
+      // Create new token
+      deviceToken = new DeviceToken({
+        userId,
+        token,
+        platform: normalizedPlatform,
+        appVersion: appVersion || '1.0.0',
+        deviceInfo: deviceInfo || {},
+        isActive: true
+      });
+      await deviceToken.save();
+    }
+
+    res.json({
+      success: true,
+      message: 'Device registered successfully',
+      data: {
+        deviceId: deviceToken._id,
+        platform: deviceToken.platform
+      }
+    });
+  } catch (error) {
+    console.error('Register device error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to register device'
     });
   }
 };
