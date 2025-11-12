@@ -90,15 +90,44 @@ exports.createOrUpdateReview = async (req, res) => {
 
     const userId = req.user.id;
 
+    // Check if review already exists
+    const existingReview = await Review.findOne({ shopId, userId });
+    const isUpdate = !!existingReview;
+
+    // Analyze sentiment using ML (Naive Bayes)
+    const sentimentAnalysis = sentimentAnalysisService.analyzeSentiment(comment || '', rating);
+
+    // Prepare update data with sentiment analysis
+    const updateData = {
+      rating,
+      comment: comment ? comment.trim() : existingReview?.comment,
+      updatedAt: new Date(),
+      sentiment: sentimentAnalysis.sentiment,
+      sentimentConfidence: sentimentAnalysis.confidence,
+      sentimentScore: sentimentAnalysis.score,
+      sentimentNormalizedScore: sentimentAnalysis.normalizedScore,
+      sentimentAnalyzedAt: new Date()
+    };
+
     const review = await Review.findOneAndUpdate(
       { shopId, userId },
-      { rating, comment, updatedAt: new Date() },
+      updateData,
       { new: true, upsert: true, setDefaultsOnInsert: true }
     );
 
+    // Retrain model with new review (for continuous learning)
+    if (comment) {
+      sentimentAnalysisService.retrainWithReview(comment, sentimentAnalysis.sentiment, rating);
+    }
+
+    // Update shop rating
     const summary = await recalcShopRating(shopId);
 
-    res.status(200).json({ success: true, data: { review, summary } });
+    res.status(200).json({ 
+      success: true, 
+      message: isUpdate ? 'Review updated successfully' : 'Review created successfully',
+      data: { review, summary } 
+    });
   } catch (err) {
     console.error('createOrUpdateReview error:', err);
     res.status(500).json({ success: false, message: 'Failed to save review' });
@@ -651,6 +680,10 @@ exports.updateReview = async (req, res) => {
           rating: review.rating,
           comment: review.comment,
           status: review.status,
+          sentiment: review.sentiment || 'neutral',
+          sentimentConfidence: review.sentimentConfidence || 0.5,
+          sentimentScore: review.sentimentScore,
+          sentimentNormalizedScore: review.sentimentNormalizedScore,
           updatedAt: review.updatedAt
         }
       }
