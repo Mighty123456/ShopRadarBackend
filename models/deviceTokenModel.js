@@ -43,6 +43,7 @@ const deviceTokenSchema = new mongoose.Schema({
     priceDrops: { type: Boolean, default: true },
     restocks: { type: Boolean, default: true },
     nearbyOffers: { type: Boolean, default: true },
+    nearbyShops: { type: Boolean, default: true }, // New: notifications for nearby shops
     featuredOffers: { type: Boolean, default: true },
     specialDeals: { type: Boolean, default: true }
   },

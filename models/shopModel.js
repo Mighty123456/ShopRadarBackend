@@ -95,6 +95,9 @@ const shopSchema = new mongoose.Schema({
   // Address comparison
   reverseGeocodedAddress: { type: String, trim: true },
   addressMatchScore: { type: Number, min: 0, max: 100, default: 0 },
+  // License location comparison (distance between license address GPS and registered location)
+  licenseLocationDistance: { type: Number }, // Distance in meters
+  licenseLocationMatch: { type: Boolean, default: false }, // True if within tolerance
   flags: {
     addressMismatch: { type: Boolean, default: false },
     licenceMismatch: { type: Boolean, default: false },

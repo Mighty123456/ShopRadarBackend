@@ -313,6 +313,78 @@ class FCMNotificationService {
       return { success: false, error: error.message };
     }
   }
+
+  /**
+   * Send notification for new shop to nearby users
+   * Sends to users who have nearbyShops preference enabled
+   */
+  async notifyNewShop(shop) {
+    try {
+      if (!this.isInitialized) {
+        console.warn('⚠️ Firebase not initialized. Skipping new shop notification.');
+        return { success: false, error: 'Firebase not initialized' };
+      }
+
+      // Handle both populated and plain objects
+      const shopObj = shop.toObject ? shop.toObject() : shop;
+      const shopName = shopObj.shopName || shopObj.name || 'New Shop';
+      const shopId = shopObj._id?.toString() || shopObj.id?.toString() || '';
+      const shopAddress = shopObj.address || '';
+      const shopState = shopObj.state || '';
+      
+      // Get shop location if available
+      let shopLat = null;
+      let shopLng = null;
+      if (shopObj.location && shopObj.location.coordinates) {
+        shopLng = shopObj.location.coordinates[0];
+        shopLat = shopObj.location.coordinates[1];
+      }
+
+      const notification = {
+        title: '🏪 New Shop in Your Area!',
+        body: `${shopName} just joined ShopRadar${shopState ? ` in ${shopState}` : ''}`,
+      };
+
+      const data = {
+        type: 'new_shop',
+        shopId: shopId,
+        shopName: shopName,
+        address: shopAddress,
+        state: shopState,
+        ...(shopLat && shopLng ? {
+          latitude: shopLat.toString(),
+          longitude: shopLng.toString()
+        } : {})
+      };
+
+      // Send to users with nearbyShops preference enabled (defaults to true if not set)
+      // We'll send to users who have nearbyOffers enabled (as nearbyShops is similar)
+      const deviceTokens = await DeviceToken.find({
+        isActive: true,
+        $or: [
+          { 'preferences.nearbyShops': { $ne: false } }, // enabled or not set (default true)
+          { 'preferences.nearbyOffers': { $ne: false } }  // fallback to nearbyOffers preference
+        ]
+      }).select('token userId');
+
+      if (deviceTokens.length === 0) {
+        console.log('📭 No users with nearby shop notifications enabled');
+        return { success: false, error: 'No users with nearby shop notifications enabled' };
+      }
+
+      const tokens = deviceTokens.map(dt => dt.token);
+      const result = await this.sendToDevices(tokens, notification, data);
+      
+      if (result.success) {
+        console.log(`📢 Sent new shop notification: ${shopName} to ${result.successCount || tokens.length} users`);
+      }
+      
+      return result;
+    } catch (error) {
+      console.error('❌ Error sending new shop notification:', error);
+      return { success: false, error: error.message };
+    }
+  }
 }
 
 // Export singleton instance

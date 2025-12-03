@@ -4,6 +4,9 @@ const authService = require('../services/authService');
 const emailService = require('../services/emailService');
 const { verifyGoogleIdToken } = require('../services/googleVerify');
 const websocketService = require('../services/websocketService');
+const fcmNotificationService = require('../services/fcmNotificationService');
+const { extractTextFromUrl, extractLicenseDetails } = require('../services/ocrService');
+const { forwardGeocode, computeAddressMatchScore } = require('../services/geocodingService');
 
 exports.register = async (req, res) => {
   try {
@@ -85,10 +88,14 @@ exports.register = async (req, res) => {
         licenseNumber,
         phone,
         address,
-        state: state || null,
         isLocationVerified: isLocationVerified || false,
         verificationStatus: 'pending'
       };
+      
+      // Add state only if provided and not empty
+      if (state && typeof state === 'string' && state.trim().length > 0) {
+        shopData.state = state.trim();
+      }
 
       // Add license document if provided
       if (licenseDocument && licenseDocument.url) {
@@ -122,13 +129,117 @@ exports.register = async (req, res) => {
 
       shop = new Shop(shopData);
 
+      // Process OCR and compare location with license document if license is provided
+      if (licenseDocument && licenseDocument.url && location && location.latitude && location.longitude) {
+        try {
+          console.log('🔍 Processing license document OCR for location comparison...');
+          
+          // Extract text from license document
+          const rawText = await extractTextFromUrl(licenseDocument.url);
+          
+          if (rawText && rawText.trim().length > 0) {
+            // Extract license details including location
+            const { extractedLicenseNumber, extractedAddress, extractedLocation } = extractLicenseDetails(rawText);
+            
+            // Store OCR results
+            shop.licenseOcr = {
+              extractedLicenseNumber: extractedLicenseNumber || null,
+              extractedAddress: extractedAddress || null,
+              rawText: rawText.substring(0, 5000), // Limit stored text
+              processedAt: new Date()
+            };
+            
+            // Compare license number
+            const licenseNumberMatch = extractedLicenseNumber && 
+              extractedLicenseNumber.replace(/\s/g, '').toUpperCase() === 
+              licenseNumber.replace(/\s/g, '').toUpperCase();
+            
+            // Compare addresses
+            let addressMatchScore = 0;
+            if (extractedAddress) {
+              addressMatchScore = computeAddressMatchScore(address, extractedAddress);
+              if (gpsAddress) {
+                const gpsScore = computeAddressMatchScore(gpsAddress, extractedAddress);
+                addressMatchScore = Math.max(addressMatchScore, gpsScore);
+              }
+            }
+            
+            // Geocode extracted address and compare GPS coordinates
+            let licenseLocationDistance = null;
+            let licenseLocationMatch = false;
+            
+            if (extractedAddress) {
+              try {
+                const geocodeResult = await forwardGeocode(extractedAddress);
+                
+                if (geocodeResult && geocodeResult.latitude && geocodeResult.longitude) {
+                  // Calculate distance between license address GPS and registered location
+                  const distanceMeters = haversineMeters(
+                    location.latitude,
+                    location.longitude,
+                    geocodeResult.latitude,
+                    geocodeResult.longitude
+                  );
+                  
+                  licenseLocationDistance = distanceMeters;
+                  // Consider match if within 500 meters (reasonable tolerance for address geocoding)
+                  licenseLocationMatch = distanceMeters <= 500;
+                  
+                  console.log(`📍 License address GPS: (${geocodeResult.latitude}, ${geocodeResult.longitude})`);
+                  console.log(`📍 Registered location GPS: (${location.latitude}, ${location.longitude})`);
+                  console.log(`📏 Distance: ${distanceMeters.toFixed(1)}m, Match: ${licenseLocationMatch}`);
+                }
+              } catch (geocodeError) {
+                console.error('Error geocoding license address:', geocodeError);
+              }
+            }
+            
+            // Set flags based on comparison results
+            shop.flags = shop.flags || {};
+            shop.flags.licenceMismatch = !licenseNumberMatch;
+            shop.flags.addressMismatch = addressMatchScore < 50; // Less than 50% match
+            
+            // Store comparison results
+            shop.addressMatchScore = addressMatchScore;
+            shop.licenseLocationDistance = licenseLocationDistance;
+            shop.licenseLocationMatch = licenseLocationMatch;
+            
+            console.log(`✅ License OCR completed:`);
+            console.log(`   - License number match: ${licenseNumberMatch}`);
+            console.log(`   - Address match score: ${addressMatchScore}%`);
+            console.log(`   - Location distance: ${licenseLocationDistance ? licenseLocationDistance.toFixed(1) + 'm' : 'N/A'}`);
+            console.log(`   - Location match: ${licenseLocationMatch}`);
+            
+            // If significant mismatch, mark for admin review
+            if (!licenseNumberMatch || addressMatchScore < 30 || (licenseLocationDistance && licenseLocationDistance > 1000)) {
+              console.log('⚠️ Significant mismatch detected - shop flagged for admin review');
+              shop.verificationNotes = 'Location/address mismatch detected during registration. Requires manual verification.';
+            }
+          } else {
+            console.log('⚠️ No text extracted from license document (OCR may not be configured)');
+          }
+        } catch (ocrError) {
+          console.error('Error processing license OCR:', ocrError);
+          // Don't fail registration if OCR fails
+        }
+      }
+
       await shop.save();
 
-      // Broadcast new shop to public clients
+      // Broadcast new shop to public clients via WebSocket
       try {
         websocketService.broadcastNewShop(shop);
       } catch (e) {
         console.error('Failed to broadcast new shop:', e);
+      }
+
+      // Send push notifications to nearby users
+      try {
+        await fcmNotificationService.notifyNewShop(shop);
+        console.log(`📢 Push notification sent for new shop: ${shop.shopName}`);
+      } catch (e) {
+        console.error('Failed to send push notification for new shop:', e);
+        // Don't fail registration if notification fails
       }
 
       // Link shop to user
@@ -426,6 +537,26 @@ exports.resetPassword = async (req, res) => {
 exports.logout = (req, res) => {
   res.json({ message: 'Logged out successfully' });
 };
+
+/**
+ * Calculate distance between two GPS coordinates using Haversine formula
+ * @param {number} lat1 Latitude of first point
+ * @param {number} lon1 Longitude of first point
+ * @param {number} lat2 Latitude of second point
+ * @param {number} lon2 Longitude of second point
+ * @returns {number} Distance in meters
+ */
+function haversineMeters(lat1, lon1, lat2, lon2) {
+  const toRad = d => (d * Math.PI) / 180;
+  const R = 6371000; // Earth radius in meters
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) + 
+            Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * 
+            Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
 
 exports.getProfile = async (req, res) => {
   try {
